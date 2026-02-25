@@ -1,0 +1,43 @@
+name: snapshot hourly
+
+on:
+  schedule:
+    # 每小時整點跑一次（UTC 時區）
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run-snapshot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Run snapshot
+        run: node snapshot.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+          OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
+          OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
+          OKX_API_PASSPHRASE: ${{ secrets.OKX_API_PASSPHRASE }}
+          OKX_BASE_URL: ${{ secrets.OKX_BASE_URL }}
+
+          OKX_WEB3_API_KEY: ${{ secrets.OKX_WEB3_API_KEY }}
+          OKX_WEB3_API_SECRET: ${{ secrets.OKX_WEB3_API_SECRET }}
+          OKX_WEB3_API_PASSPHRASE: ${{ secrets.OKX_WEB3_API_PASSPHRASE }}
+          OKX_WEB3_BASE_URL: ${{ secrets.OKX_WEB3_BASE_URL }}
+
+          ETH_WALLET_ADDRESS: ${{ secrets.ETH_WALLET_ADDRESS }}
+          SOL_WALLET_ADDRESS: ${{ secrets.SOL_WALLET_ADDRESS }}
