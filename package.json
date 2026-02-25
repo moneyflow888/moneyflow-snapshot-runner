@@ -1,0 +1,15 @@
+{
+    "name": "moneyflow-snapshot-runner",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "run": "node ./snapshot.js"
+    },
+    "dependencies": {
+        "@solana/web3.js": "^1.98.4",
+        "@supabase/supabase-js": "^2.97.0",
+        "axios": "^1.13.5",
+        "dotenv": "^17.3.1",
+        "ethers": "^6.16.0"
+    }
+}
