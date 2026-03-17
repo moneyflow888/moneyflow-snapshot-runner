@@ -2,9 +2,13 @@ name: weekly pnl snapshot
 
 on:
   schedule:
-    # 每週一 00:10 UTC 執行一次
-    # 台灣時間（UTC+8）= 每週一 08:10
-    - cron: "10 0 * * 1"
+    # 週一多次執行（防止排程跳過）
+    - cron: "0 0 * * 1"
+    - cron: "0 2 * * 1"
+    - cron: "0 4 * * 1"
+    - cron: "0 7 * * 1"
+    - cron: "0 10 * * 1"
+
   workflow_dispatch: {}
 
 jobs:
@@ -14,10 +18,11 @@ jobs:
     steps:
       - name: Call weekly pnl snapshot API
         run: |
-          curl -i -X POST "${MONEYFLOW_AXIS_BASE_URL}/api/admin/weekly-pnl-snapshot" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${CRON_SECRET}" \
-            --data '{}'
+          curl -X POST "${MONEYFLOW_AXIS_BASE_URL}/api/admin/weekly-pnl-snapshot" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${CRON_SECRET}" \
+          --data '{}'
+
         env:
           MONEYFLOW_AXIS_BASE_URL: ${{ secrets.MONEYFLOW_AXIS_BASE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
