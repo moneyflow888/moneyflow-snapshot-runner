@@ -74,14 +74,57 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
 
-/**
- * ✅ 一定要寫 meta
- */
 async function writeNavSnapshot({ ts, nav_usd, meta }) {
   const r = await supabase.from("nav_snapshots").insert([{ ts, nav_usd, meta }]);
   if (r.error) {
     throw new Error(`Supabase insert nav_snapshots failed: ${r.error.message}`);
   }
+}
+
+async function writeWtdLiveSnapshot({ ts, pnl_usd, pnl_pct, nav_usd, note }) {
+  const r = await supabase.from("wtd_live_snapshots").insert([
+    {
+      ts,
+      pnl_usd,
+      pnl_pct,
+      nav_usd,
+      note: note || null,
+    },
+  ]);
+
+  if (r.error) {
+    throw new Error(`Supabase insert wtd_live_snapshots failed: ${r.error.message}`);
+  }
+}
+
+/**
+ * =========================================
+ * MoneyFlow Axis public API
+ * =========================================
+ */
+const MONEYFLOW_AXIS_BASE_URL =
+  env("MONEYFLOW_AXIS_BASE_URL") || env("NEXT_PUBLIC_BASE_URL") || "https://moneyflow-axis.vercel.app";
+
+async function fetchPnlWeek() {
+  const base = MONEYFLOW_AXIS_BASE_URL.replace(/\/+$/, "");
+  const url = `${base}/api/public/pnl-week`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+
+  const j = await readJson(res);
+  if (!j.ok) {
+    throw new Error(`pnl-week HTTP ${j.status}: ${j.raw || JSON.stringify(j.data)}`);
+  }
+
+  const data = j.data || {};
+  return {
+    pnl_usd: num(data?.pnl_usd ?? data?.pnl ?? 0),
+    pnl_pct: num(data?.pnl_pct ?? 0),
+    raw: data,
+  };
 }
 
 /**
@@ -122,7 +165,7 @@ async function okxCexRequest({ method, requestPath, bodyObj }) {
   return j.data;
 }
 
-/** ✅ Trading account 的 totalEq */
+/** Trading account 的 totalEq */
 async function getOkxCexEquityUsdApprox() {
   const data = await okxCexRequest({ method: "GET", requestPath: "/api/v5/account/balance" });
   return num(data?.data?.[0]?.totalEq);
@@ -137,9 +180,9 @@ const SOL_WALLET_ADDRESS = env("SOL_WALLET_ADDRESS");
 const ETH_WALLET_ADDRESS = env("ETH_WALLET_ADDRESS");
 
 /**
- * ✅ BTC 錢包地址
+ * BTC 錢包地址
  * - 可用 env 覆蓋
- * - 沒設就直接用你這次提供的地址
+ * - 沒設就直接用你提供的地址
  */
 const BTC_WALLET_ADDRESS =
   env("BTC_WALLET_ADDRESS") || "bc1qxqkrlgtp4n7gqvy2nl60nsr57rsacd4keq0qlq";
@@ -177,11 +220,9 @@ async function fetchSolWallet(ownerStr) {
   const connection = new Connection(SOLANA_RPC_URL, "confirmed");
   const owner = new PublicKey(ownerStr);
 
-  // SOL
   const lamports = await connection.getBalance(owner);
   const sol = lamports / LAMPORTS_PER_SOL;
 
-  // SPL tokens
   const resp = await connection.getParsedTokenAccountsByOwner(owner, {
     programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
   });
@@ -239,13 +280,11 @@ async function fetchEthWallet(ownerStr) {
 
   const provider = await makeWorkingEvmProvider();
 
-  // ETH
   const wei = await provider.getBalance(ownerStr);
   const eth = Number(ethers.formatEther(wei));
 
   const assets = [{ symbol: "ETH", amount: eth }];
 
-  // ERC20 stablecoins
   for (const [sym, t] of Object.entries(EVM_TOKENS)) {
     try {
       const c = new ethers.Contract(t.address, ERC20_ABI, provider);
@@ -274,7 +313,7 @@ const BTC_ADDRESS_API_CANDIDATES = [
 ];
 
 async function fetchBtcWallet(address) {
-  if (!address) return { assets: [] };
+  if (!address) return { assets: [], raw: null };
 
   let lastErr = null;
 
@@ -371,9 +410,6 @@ async function okxWeb3Request({ path, bodyObj }) {
   return j.data;
 }
 
-/**
- * ✅ 429 / 50011 退避重試
- */
 async function okxWeb3RequestWithRetry(args, maxRetry = 6) {
   let lastErr = null;
 
@@ -448,12 +484,13 @@ async function main() {
     eth_address: ETH_WALLET_ADDRESS ? "ok" : "(empty)",
     sol_address: SOL_WALLET_ADDRESS ? "ok" : "(empty)",
     btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
+    axis_base_url: MONEYFLOW_AXIS_BASE_URL ? "ok" : "(empty)",
   });
 
   // 1) OKX CEX
   const cexUsd = await getOkxCexEquityUsdApprox();
 
-  // 2) Wallet RPC (ETH/SOL/BTC)
+  // 2) Wallet RPC (ETH / SOL / BTC)
   let ethWallet = { assets: [] };
   let solWallet = { assets: [] };
   let btcWallet = { assets: [], raw: null };
@@ -506,8 +543,8 @@ async function main() {
 
   /**
    * 4) Wallet valuation
-   * - ETH/SOL/BTC 用 CoinGecko
-   * - USDC/USDT assume 1 USD
+   * - ETH / SOL / BTC 用 CoinGecko
+   * - USDC / USDT assume 1 USD
    */
   const ethAmount = Number(ethWallet.assets?.find((x) => x.symbol === "ETH")?.amount || 0);
   const solAmount = Number(solWallet.assets?.find((x) => x.symbol === "SOL")?.amount || 0);
@@ -527,13 +564,8 @@ async function main() {
   try {
     prices = await fetchPricesUsd(["BTC", "ETH", "SOL"]);
 
-    // ETH wallet usd = ETH估值 + USDC + USDT
     ethWalletUsd = ethAmount * (prices.ETH || 0) + ethUsdc + ethUsdt;
-
-    // SOL wallet usd = SOL估值 + USDC + USDT
     solWalletUsd = solAmount * (prices.SOL || 0) + solUsdc + solUsdt;
-
-    // BTC wallet usd = BTC估值
     btcWalletUsd = btcAmount * (prices.BTC || 0);
   } catch (e) {
     console.log("[prices] failed -> wallet usd uses stablecoins only:", e?.message || e);
@@ -542,7 +574,7 @@ async function main() {
     btcWalletUsd = 0;
   }
 
-  // ✅ NAV = CEX + DeFi + Wallet
+  // NAV = CEX + DeFi + Wallet
   const nav_usd =
     cexUsd +
     ethDefi.usd +
@@ -551,9 +583,6 @@ async function main() {
     solWalletUsd +
     btcWalletUsd;
 
-  /**
-   * ✅ 前端圓圖 / 今日明細用的純數字 breakdown
-   */
   const breakdown_rollup = {
     okx_cex_usd: cexUsd,
     okx_web3_defi_eth_usd: ethDefi.usd,
@@ -563,9 +592,6 @@ async function main() {
     btc_wallet_usd: btcWalletUsd,
   };
 
-  /**
-   * ✅ meta：保留完整 breakdown + rollup
-   */
   const meta = {
     source:
       "okx_cex(totalEq) + okx_web3_defi(platform_list) + wallet_rpc(eth/sol + usdc/usdt + btc)",
@@ -594,6 +620,7 @@ async function main() {
       okx_web3_base_url: OKX_WEB3_BASE_URL,
       chainIds: { eth: OKX_WEB3_ETH_CHAIN_ID, sol: OKX_WEB3_SOL_CHAIN_ID },
       btc_wallet_address: BTC_WALLET_ADDRESS,
+      axis_base_url: MONEYFLOW_AXIS_BASE_URL,
     },
   };
 
@@ -604,8 +631,29 @@ async function main() {
     btc_wallet_detail: { BTC: btcAmount },
   });
 
+  // 5) 先寫 NAV
   await writeNavSnapshot({ ts, nav_usd, meta });
   console.log("✅ nav_snapshots inserted (with meta)");
+
+  // 6) 再寫 WTD live snapshot
+  try {
+    const pnlWeek = await fetchPnlWeek();
+
+    await writeWtdLiveSnapshot({
+      ts,
+      pnl_usd: pnlWeek.pnl_usd,
+      pnl_pct: pnlWeek.pnl_pct,
+      nav_usd,
+      note: "snapshot-runner",
+    });
+
+    console.log("✅ wtd_live_snapshots inserted", {
+      pnl_usd: pnlWeek.pnl_usd,
+      pnl_pct: pnlWeek.pnl_pct,
+    });
+  } catch (e) {
+    console.log("[wtd-live-snapshot] failed (still ok):", e?.message || e);
+  }
 }
 
 main().catch((e) => {
