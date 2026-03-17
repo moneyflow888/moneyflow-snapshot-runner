@@ -41,3 +41,6 @@ jobs:
 
           ETH_WALLET_ADDRESS: ${{ secrets.ETH_WALLET_ADDRESS }}
           SOL_WALLET_ADDRESS: ${{ secrets.SOL_WALLET_ADDRESS }}
+          BTC_WALLET_ADDRESS: ${{ secrets.BTC_WALLET_ADDRESS }}
+
+          MONEYFLOW_AXIS_BASE_URL: ${{ secrets.MONEYFLOW_AXIS_BASE_URL }}
