@@ -97,6 +97,25 @@ async function writeWtdLiveSnapshot({ ts, pnl_usd, pnl_pct, nav_usd, note }) {
   }
 }
 
+async function getLatestNavSnapshot() {
+  const r = await supabase
+    .from("nav_snapshots")
+    .select("ts, nav_usd, meta")
+    .order("ts", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (r.error) {
+    throw new Error(`Supabase read latest nav_snapshots failed: ${r.error.message}`);
+  }
+
+  return r.data || null;
+}
+
+function getBreakdownValue(meta, key) {
+  return num(meta?.breakdown_rollup?.[key]);
+}
+
 /**
  * =========================================
  * MoneyFlow Axis public API
@@ -374,6 +393,16 @@ function web3Enabled() {
   return !!(OKX_WEB3_API_KEY && OKX_WEB3_API_SECRET && OKX_WEB3_API_PASSPHRASE);
 }
 
+function isOkxWeb3RateLimitMessage(msg) {
+  const s = String(msg || "").toLowerCase();
+  return (
+    s.includes("http 429") ||
+    s.includes("50011") ||
+    s.includes("too many requests") ||
+    s.includes("rate limit")
+  );
+}
+
 async function okxWeb3Request({ path, bodyObj }) {
   if (!web3Enabled()) {
     throw new Error("Missing OKX_WEB3_API_KEY / OKX_WEB3_API_SECRET / OKX_WEB3_API_PASSPHRASE");
@@ -406,7 +435,16 @@ async function okxWeb3Request({ path, bodyObj }) {
   const res = await fetch(url, { method, headers, body });
 
   const j = await readJson(res);
-  if (!j.ok) throw new Error(`OKX WEB3 HTTP ${j.status}: ${j.raw || JSON.stringify(j.data)}`);
+  if (!j.ok) {
+    throw new Error(`OKX WEB3 HTTP ${j.status}: ${j.raw || JSON.stringify(j.data)}`);
+  }
+
+  const code = String(j?.data?.code ?? "");
+  if (code && code !== "0") {
+    const msg = j?.data?.msg || j?.data?.message || j?.raw || JSON.stringify(j?.data);
+    throw new Error(`OKX WEB3 API code ${code}: ${msg}`);
+  }
+
   return j.data;
 }
 
@@ -419,10 +457,7 @@ async function okxWeb3RequestWithRetry(args, maxRetry = 6) {
     } catch (e) {
       lastErr = e;
       const msg = String(e?.message || "");
-      const is429 =
-        msg.includes("HTTP 429") ||
-        msg.includes("50011") ||
-        msg.toLowerCase().includes("too many requests");
+      const is429 = isOkxWeb3RateLimitMessage(msg);
 
       if (is429) {
         const wait = 800 * Math.pow(2, i) + Math.floor(Math.random() * 250);
@@ -471,6 +506,7 @@ async function getOkxWeb3DefiUsd({ chainId, walletAddress }) {
  */
 async function main() {
   const ts = new Date().toISOString();
+  const latestSnapshot = await getLatestNavSnapshot();
 
   console.log("[env-check]", {
     supabase_url: SUPABASE_URL ? "ok" : "missing",
@@ -485,6 +521,7 @@ async function main() {
     sol_address: SOL_WALLET_ADDRESS ? "ok" : "(empty)",
     btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
     axis_base_url: MONEYFLOW_AXIS_BASE_URL ? "ok" : "(empty)",
+    previous_nav_present: !!latestSnapshot,
   });
 
   // 1) OKX CEX
@@ -517,17 +554,40 @@ async function main() {
   let ethDefi = { usd: 0, platforms: [] };
   let solDefi = { usd: 0, platforms: [] };
 
+  let web3EthStatus = "disabled";
+  let web3SolStatus = "disabled";
+  let web3EthError = null;
+  let web3SolError = null;
+  let web3EthUsedFallback = false;
+  let web3SolUsedFallback = false;
+
+  const prevEthDefiUsd = getBreakdownValue(latestSnapshot?.meta, "okx_web3_defi_eth_usd");
+  const prevSolDefiUsd = getBreakdownValue(latestSnapshot?.meta, "okx_web3_defi_sol_usd");
+
   if (web3Enabled()) {
+    web3EthStatus = "ok";
+    web3SolStatus = "ok";
+
     try {
       ethDefi = await getOkxWeb3DefiUsd({
         chainId: OKX_WEB3_ETH_CHAIN_ID,
         walletAddress: ETH_WALLET_ADDRESS,
       });
     } catch (e) {
-      console.log("[web3 ETH] failed -> use 0. reason=", e?.message || e);
+      web3EthStatus = "fallback_previous_snapshot";
+      web3EthError = e?.message || String(e);
+      web3EthUsedFallback = latestSnapshot != null;
+      ethDefi = {
+        usd: latestSnapshot ? prevEthDefiUsd : 0,
+        platforms: latestSnapshot ? [{ platformName: "__fallback_prev_snapshot__", currencyAmount: prevEthDefiUsd }] : [],
+      };
+      console.log(
+        `[web3 ETH] failed -> use ${latestSnapshot ? "previous snapshot" : "0"} . reason=`,
+        web3EthError
+      );
     }
 
-    await sleep(250);
+    await sleep(350);
 
     try {
       solDefi = await getOkxWeb3DefiUsd({
@@ -535,7 +595,17 @@ async function main() {
         walletAddress: SOL_WALLET_ADDRESS,
       });
     } catch (e) {
-      console.log("[web3 SOL] failed -> use 0. reason=", e?.message || e);
+      web3SolStatus = "fallback_previous_snapshot";
+      web3SolError = e?.message || String(e);
+      web3SolUsedFallback = latestSnapshot != null;
+      solDefi = {
+        usd: latestSnapshot ? prevSolDefiUsd : 0,
+        platforms: latestSnapshot ? [{ platformName: "__fallback_prev_snapshot__", currencyAmount: prevSolDefiUsd }] : [],
+      };
+      console.log(
+        `[web3 SOL] failed -> use ${latestSnapshot ? "previous snapshot" : "0"} . reason=`,
+        web3SolError
+      );
     }
   } else {
     console.log("[web3] disabled: missing OKX_WEB3_*");
@@ -575,13 +645,51 @@ async function main() {
   }
 
   // NAV = CEX + DeFi + Wallet
-  const nav_usd =
+  let nav_usd =
     cexUsd +
     ethDefi.usd +
     solDefi.usd +
     ethWalletUsd +
     solWalletUsd +
     btcWalletUsd;
+
+  const previousNavUsd = num(latestSnapshot?.nav_usd);
+  const navDropPct =
+    previousNavUsd > 0 ? ((previousNavUsd - nav_usd) / previousNavUsd) * 100 : 0;
+
+  // 額外保護：如果這次有用 fallback，但 NAV 還是異常大跌，直接沿用上一筆 DeFi 值重算一次
+  if (
+    latestSnapshot &&
+    (web3EthUsedFallback || web3SolUsedFallback) &&
+    previousNavUsd > 0 &&
+    navDropPct > 30
+  ) {
+    const forcedEth = prevEthDefiUsd;
+    const forcedSol = prevSolDefiUsd;
+
+    ethDefi = {
+      usd: forcedEth,
+      platforms: [{ platformName: "__forced_prev_snapshot__", currencyAmount: forcedEth }],
+    };
+    solDefi = {
+      usd: forcedSol,
+      platforms: [{ platformName: "__forced_prev_snapshot__", currencyAmount: forcedSol }],
+    };
+
+    nav_usd =
+      cexUsd +
+      ethDefi.usd +
+      solDefi.usd +
+      ethWalletUsd +
+      solWalletUsd +
+      btcWalletUsd;
+
+    console.log("[nav-guard] abnormal drop detected while web3 fallback used -> force previous DeFi values", {
+      previous_nav_usd: previousNavUsd,
+      recalculated_nav_usd: nav_usd,
+      nav_drop_pct: navDropPct,
+    });
+  }
 
   const breakdown_rollup = {
     okx_cex_usd: cexUsd,
@@ -621,6 +729,34 @@ async function main() {
       chainIds: { eth: OKX_WEB3_ETH_CHAIN_ID, sol: OKX_WEB3_SOL_CHAIN_ID },
       btc_wallet_address: BTC_WALLET_ADDRESS,
       axis_base_url: MONEYFLOW_AXIS_BASE_URL,
+
+      previous_snapshot: latestSnapshot
+        ? {
+            ts: latestSnapshot.ts,
+            nav_usd: num(latestSnapshot.nav_usd),
+            okx_web3_defi_eth_usd: prevEthDefiUsd,
+            okx_web3_defi_sol_usd: prevSolDefiUsd,
+          }
+        : null,
+
+      web3_fetch: {
+        eth: {
+          status: web3EthStatus,
+          used_fallback: web3EthUsedFallback,
+          error: web3EthError,
+        },
+        sol: {
+          status: web3SolStatus,
+          used_fallback: web3SolUsedFallback,
+          error: web3SolError,
+        },
+      },
+
+      nav_guard: {
+        previous_nav_usd: previousNavUsd,
+        current_nav_usd: nav_usd,
+        nav_drop_pct,
+      },
     },
   };
 
@@ -629,6 +765,12 @@ async function main() {
     eth_wallet_detail: { ETH: ethAmount, USDC: ethUsdc, USDT: ethUsdt },
     sol_wallet_detail: { SOL: solAmount, USDC: solUsdc, USDT: solUsdt },
     btc_wallet_detail: { BTC: btcAmount },
+    web3_fetch: {
+      eth: { status: web3EthStatus, used_fallback: web3EthUsedFallback, error: web3EthError },
+      sol: { status: web3SolStatus, used_fallback: web3SolUsedFallback, error: web3SolError },
+    },
+    previous_nav_usd: previousNavUsd,
+    nav_drop_pct,
   });
 
   // 5) 先寫 NAV
