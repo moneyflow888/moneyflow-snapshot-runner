@@ -579,7 +579,9 @@ async function main() {
       web3EthUsedFallback = latestSnapshot != null;
       ethDefi = {
         usd: latestSnapshot ? prevEthDefiUsd : 0,
-        platforms: latestSnapshot ? [{ platformName: "__fallback_prev_snapshot__", currencyAmount: prevEthDefiUsd }] : [],
+        platforms: latestSnapshot
+          ? [{ platformName: "__fallback_prev_snapshot__", currencyAmount: prevEthDefiUsd }]
+          : [],
       };
       console.log(
         `[web3 ETH] failed -> use ${latestSnapshot ? "previous snapshot" : "0"} . reason=`,
@@ -600,7 +602,9 @@ async function main() {
       web3SolUsedFallback = latestSnapshot != null;
       solDefi = {
         usd: latestSnapshot ? prevSolDefiUsd : 0,
-        platforms: latestSnapshot ? [{ platformName: "__fallback_prev_snapshot__", currencyAmount: prevSolDefiUsd }] : [],
+        platforms: latestSnapshot
+          ? [{ platformName: "__fallback_prev_snapshot__", currencyAmount: prevSolDefiUsd }]
+          : [],
       };
       console.log(
         `[web3 SOL] failed -> use ${latestSnapshot ? "previous snapshot" : "0"} . reason=`,
@@ -755,7 +759,7 @@ async function main() {
       nav_guard: {
         previous_nav_usd: previousNavUsd,
         current_nav_usd: nav_usd,
-        nav_drop_pct,
+        nav_drop_pct: navDropPct,
       },
     },
   };
@@ -770,7 +774,7 @@ async function main() {
       sol: { status: web3SolStatus, used_fallback: web3SolUsedFallback, error: web3SolError },
     },
     previous_nav_usd: previousNavUsd,
-    nav_drop_pct,
+    nav_drop_pct: navDropPct,
   });
 
   // 5) 先寫 NAV
