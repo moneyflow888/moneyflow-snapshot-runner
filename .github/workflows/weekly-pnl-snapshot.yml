@@ -9,7 +9,16 @@ on:
     - cron: "0 7 * * 1"
     - cron: "0 10 * * 1"
 
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      week_key:
+        description: "可選：手動補某週，格式 YYYY-MM-DD，例如 2026-03-23"
+        required: false
+        default: ""
+      force:
+        description: "是否覆寫已存在的週快照"
+        required: false
+        default: "false"
 
 jobs:
   run-weekly-pnl-snapshot:
@@ -17,12 +26,30 @@ jobs:
 
     steps:
       - name: Call weekly pnl snapshot API
+        shell: bash
         run: |
-          curl -X POST "${MONEYFLOW_AXIS_BASE_URL}/api/admin/weekly-pnl-snapshot" \
-          -H "Content-Type: application/json" \
-          -H "Authorization: Bearer ${CRON_SECRET}" \
-          --data '{}'
+          set -euo pipefail
 
+          WEEK_KEY="${{ github.event.inputs.week_key }}"
+          FORCE="${{ github.event.inputs.force }}"
+
+          if [ -n "${WEEK_KEY}" ]; then
+            BODY=$(printf '{"week_key":"%s","force":%s}' "${WEEK_KEY}" "${FORCE}")
+          else
+            BODY='{}'
+          fi
+
+          echo "Request body: ${BODY}"
+
+          RESPONSE=$(curl -sS --fail-with-body -X POST "${MONEYFLOW_AXIS_BASE_URL}/api/admin/weekly-pnl-snapshot" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            --data "${BODY}")
+
+          echo "API response:"
+          echo "${RESPONSE}"
+
+          echo "${RESPONSE}" | grep '"ok":[[:space:]]*true'
         env:
           MONEYFLOW_AXIS_BASE_URL: ${{ secrets.MONEYFLOW_AXIS_BASE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
