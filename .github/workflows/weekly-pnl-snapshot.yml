@@ -2,12 +2,9 @@ name: weekly pnl snapshot
 
 on:
   schedule:
-    # 週一多次執行（防止排程跳過）
-    - cron: "0 0 * * 1"
-    - cron: "0 2 * * 1"
-    - cron: "0 4 * * 1"
-    - cron: "0 7 * * 1"
-    - cron: "0 10 * * 1"
+    # 週一多次執行（防止排程跳過）→ 原本時段內每小時 2 次
+    - cron: "0 0,2,4,7,10 * * 1"
+    - cron: "30 0,2,4,7,10 * * 1"
 
   workflow_dispatch:
     inputs:
