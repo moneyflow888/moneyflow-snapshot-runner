@@ -2,11 +2,10 @@ name: snapshot hourly
 
 on:
   schedule:
-    # 每小時跑 4 次（UTC 時區）
+    # 每小時跑 2 次（UTC）
     - cron: "0 * * * *"
-    - cron: "15 * * * *"
     - cron: "30 * * * *"
-    - cron: "45 * * * *"
+
   workflow_dispatch: {}
 
 jobs:
