@@ -5,11 +5,6 @@ import { createClient } from "@supabase/supabase-js";
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { ethers } from "ethers";
 
-/**
- * =========================================
- * Env helpers
- * =========================================
- */
 const env = (k) => (process.env[k] ?? "").toString().trim();
 
 function must(k) {
@@ -34,11 +29,6 @@ async function readJson(res) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/**
- * =========================================
- * Prices (CoinGecko)
- * =========================================
- */
 async function fetchPricesUsd(symbols) {
   const map = {
     BTC: "bitcoin",
@@ -62,11 +52,6 @@ async function fetchPricesUsd(symbols) {
   return out;
 }
 
-/**
- * =========================================
- * Supabase
- * =========================================
- */
 const SUPABASE_URL = must("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = must("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -76,25 +61,14 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 
 async function writeNavSnapshot({ ts, nav_usd, meta }) {
   const r = await supabase.from("nav_snapshots").insert([{ ts, nav_usd, meta }]);
-  if (r.error) {
-    throw new Error(`Supabase insert nav_snapshots failed: ${r.error.message}`);
-  }
+  if (r.error) throw new Error(`Supabase insert nav_snapshots failed: ${r.error.message}`);
 }
 
 async function writeWtdLiveSnapshot({ ts, pnl_usd, pnl_pct, nav_usd, note }) {
   const r = await supabase.from("wtd_live_snapshots").insert([
-    {
-      ts,
-      pnl_usd,
-      pnl_pct,
-      nav_usd,
-      note: note || null,
-    },
+    { ts, pnl_usd, pnl_pct, nav_usd, note: note || null },
   ]);
-
-  if (r.error) {
-    throw new Error(`Supabase insert wtd_live_snapshots failed: ${r.error.message}`);
-  }
+  if (r.error) throw new Error(`Supabase insert wtd_live_snapshots failed: ${r.error.message}`);
 }
 
 async function getLatestNavSnapshot() {
@@ -105,10 +79,7 @@ async function getLatestNavSnapshot() {
     .limit(1)
     .maybeSingle();
 
-  if (r.error) {
-    throw new Error(`Supabase read latest nav_snapshots failed: ${r.error.message}`);
-  }
-
+  if (r.error) throw new Error(`Supabase read latest nav_snapshots failed: ${r.error.message}`);
   return r.data || null;
 }
 
@@ -116,11 +87,6 @@ function getBreakdownValue(meta, key) {
   return num(meta?.breakdown_rollup?.[key]);
 }
 
-/**
- * =========================================
- * MoneyFlow Axis public API
- * =========================================
- */
 const MONEYFLOW_AXIS_BASE_URL =
   env("MONEYFLOW_AXIS_BASE_URL") || env("NEXT_PUBLIC_BASE_URL") || "https://moneyflow-axis.vercel.app";
 
@@ -134,9 +100,7 @@ async function fetchPnlWeek() {
   });
 
   const j = await readJson(res);
-  if (!j.ok) {
-    throw new Error(`pnl-week HTTP ${j.status}: ${j.raw || JSON.stringify(j.data)}`);
-  }
+  if (!j.ok) throw new Error(`pnl-week HTTP ${j.status}: ${j.raw || JSON.stringify(j.data)}`);
 
   const data = j.data || {};
   return {
@@ -146,11 +110,6 @@ async function fetchPnlWeek() {
   };
 }
 
-/**
- * =========================================
- * OKX CEX (v5) signed request
- * =========================================
- */
 const OKX_API_KEY = must("OKX_API_KEY");
 const OKX_API_SECRET = must("OKX_API_SECRET");
 const OKX_API_PASSPHRASE = must("OKX_API_PASSPHRASE");
@@ -184,33 +143,17 @@ async function okxCexRequest({ method, requestPath, bodyObj }) {
   return j.data;
 }
 
-/** Trading account 的 totalEq */
 async function getOkxCexEquityUsdApprox() {
   const data = await okxCexRequest({ method: "GET", requestPath: "/api/v5/account/balance" });
   return num(data?.data?.[0]?.totalEq);
 }
 
-/**
- * =========================================
- * Wallet addresses
- * =========================================
- */
 const SOL_WALLET_ADDRESS = env("SOL_WALLET_ADDRESS");
 const ETH_WALLET_ADDRESS = env("ETH_WALLET_ADDRESS");
 
-/**
- * BTC 錢包地址
- * - 可用 env 覆蓋
- * - 沒設就直接用你提供的地址
- */
 const BTC_WALLET_ADDRESS =
   env("BTC_WALLET_ADDRESS") || "bc1qxqkrlgtp4n7gqvy2nl60nsr57rsacd4keq0qlq";
 
-/**
- * =========================================
- * Wallet RPC (ETH + SOL)
- * =========================================
- */
 const SOLANA_RPC_URL = env("SOLANA_RPC_URL") || "https://api.mainnet-beta.solana.com";
 
 const ETH_RPC_URLS = (env("ETH_RPC_URLS") || "")
@@ -225,12 +168,10 @@ const ETH_RPC_CANDIDATES = [
   "https://eth.llamarpc.com",
 ].filter(Boolean);
 
-/**
- * ---- Solana SPL mints ----
- */
 const SOL_MINTS = {
   USDC: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
   USDT: "Es9vMFrzaCERmJfrF4H2FYD4KZcQw2YQkM1Zq8hY1n9",
+  ONYC: "5Y8NV33Vv7WbnLfq3zBcKSdYPrk7g2KoiQoe7M2tcxp5",
 };
 
 async function fetchSolWallet(ownerStr) {
@@ -267,9 +208,6 @@ async function fetchSolWallet(ownerStr) {
   return { assets };
 }
 
-/**
- * ---- Ethereum ERC20 ----
- */
 const ERC20_ABI = ["function balanceOf(address owner) view returns (uint256)"];
 
 const EVM_TOKENS = {
@@ -279,6 +217,7 @@ const EVM_TOKENS = {
 
 async function makeWorkingEvmProvider() {
   const errors = [];
+
   for (const url of [...new Set(ETH_RPC_CANDIDATES)]) {
     try {
       const p = new ethers.JsonRpcProvider(url);
@@ -291,6 +230,7 @@ async function makeWorkingEvmProvider() {
       errors.push({ url, msg: e?.message || String(e) });
     }
   }
+
   throw new Error("No working EVM RPC:\n" + errors.map((x) => `- ${x.url}: ${x.msg}`).join("\n"));
 }
 
@@ -318,14 +258,6 @@ async function fetchEthWallet(ownerStr) {
   return { assets };
 }
 
-/**
- * =========================================
- * BTC wallet balance
- * =========================================
- * 使用公開 API：
- * - Blockstream
- * - mempool.space
- */
 const BTC_ADDRESS_API_CANDIDATES = [
   "https://blockstream.info/api",
   "https://mempool.space/api",
@@ -375,11 +307,6 @@ async function fetchBtcWallet(address) {
   throw lastErr || new Error("BTC wallet fetch failed");
 }
 
-/**
- * =========================================
- * OKX Web3 DeFi (倉位估值)
- * =========================================
- */
 const OKX_WEB3_API_KEY = env("OKX_WEB3_API_KEY");
 const OKX_WEB3_API_SECRET = env("OKX_WEB3_API_SECRET");
 const OKX_WEB3_API_PASSPHRASE = env("OKX_WEB3_API_PASSPHRASE");
@@ -435,9 +362,7 @@ async function okxWeb3Request({ path, bodyObj }) {
   const res = await fetch(url, { method, headers, body });
 
   const j = await readJson(res);
-  if (!j.ok) {
-    throw new Error(`OKX WEB3 HTTP ${j.status}: ${j.raw || JSON.stringify(j.data)}`);
-  }
+  if (!j.ok) throw new Error(`OKX WEB3 HTTP ${j.status}: ${j.raw || JSON.stringify(j.data)}`);
 
   const code = String(j?.data?.code ?? "");
   if (code && code !== "0") {
@@ -465,6 +390,7 @@ async function okxWeb3RequestWithRetry(args, maxRetry = 6) {
         await sleep(wait);
         continue;
       }
+
       throw e;
     }
   }
@@ -499,11 +425,6 @@ async function getOkxWeb3DefiUsd({ chainId, walletAddress }) {
   };
 }
 
-/**
- * =========================================
- * Main
- * =========================================
- */
 async function main() {
   const ts = new Date().toISOString();
   const latestSnapshot = await getLatestNavSnapshot();
@@ -521,13 +442,12 @@ async function main() {
     sol_address: SOL_WALLET_ADDRESS ? "ok" : "(empty)",
     btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
     axis_base_url: MONEYFLOW_AXIS_BASE_URL ? "ok" : "(empty)",
+    onyc_price_usd: env("ONYC_PRICE_USD") || "1.10",
     previous_nav_present: !!latestSnapshot,
   });
 
-  // 1) OKX CEX
   const cexUsd = await getOkxCexEquityUsdApprox();
 
-  // 2) Wallet RPC (ETH / SOL / BTC)
   let ethWallet = { assets: [] };
   let solWallet = { assets: [] };
   let btcWallet = { assets: [], raw: null };
@@ -550,7 +470,6 @@ async function main() {
     console.log("[rpc:btc] failed (still ok):", e?.message || e);
   }
 
-  // 3) OKX Web3 DeFi USD
   let ethDefi = { usd: 0, platforms: [] };
   let solDefi = { usd: 0, platforms: [] };
 
@@ -583,10 +502,7 @@ async function main() {
           ? [{ platformName: "__fallback_prev_snapshot__", currencyAmount: prevEthDefiUsd }]
           : [],
       };
-      console.log(
-        `[web3 ETH] failed -> use ${latestSnapshot ? "previous snapshot" : "0"} . reason=`,
-        web3EthError
-      );
+      console.log(`[web3 ETH] failed -> use ${latestSnapshot ? "previous snapshot" : "0"} . reason=`, web3EthError);
     }
 
     await sleep(350);
@@ -606,20 +522,12 @@ async function main() {
           ? [{ platformName: "__fallback_prev_snapshot__", currencyAmount: prevSolDefiUsd }]
           : [],
       };
-      console.log(
-        `[web3 SOL] failed -> use ${latestSnapshot ? "previous snapshot" : "0"} . reason=`,
-        web3SolError
-      );
+      console.log(`[web3 SOL] failed -> use ${latestSnapshot ? "previous snapshot" : "0"} . reason=`, web3SolError);
     }
   } else {
     console.log("[web3] disabled: missing OKX_WEB3_*");
   }
 
-  /**
-   * 4) Wallet valuation
-   * - ETH / SOL / BTC 用 CoinGecko
-   * - USDC / USDT assume 1 USD
-   */
   const ethAmount = Number(ethWallet.assets?.find((x) => x.symbol === "ETH")?.amount || 0);
   const solAmount = Number(solWallet.assets?.find((x) => x.symbol === "SOL")?.amount || 0);
   const btcAmount = Number(btcWallet.assets?.find((x) => x.symbol === "BTC")?.amount || 0);
@@ -629,6 +537,10 @@ async function main() {
 
   const solUsdc = Number(solWallet.assets?.find((x) => x.symbol === "USDC")?.amount || 0);
   const solUsdt = Number(solWallet.assets?.find((x) => x.symbol === "USDT")?.amount || 0);
+  const solOnyc = Number(solWallet.assets?.find((x) => x.symbol === "ONYC")?.amount || 0);
+
+  const onycPriceUsd = num(env("ONYC_PRICE_USD")) > 0 ? num(env("ONYC_PRICE_USD")) : 1.10;
+  const onycWalletUsd = solOnyc * onycPriceUsd;
 
   let prices = {};
   let ethWalletUsd = 0;
@@ -648,20 +560,20 @@ async function main() {
     btcWalletUsd = 0;
   }
 
-  // NAV = CEX + DeFi + Wallet
+  prices.ONYC = onycPriceUsd;
+
   let nav_usd =
     cexUsd +
     ethDefi.usd +
     solDefi.usd +
     ethWalletUsd +
     solWalletUsd +
-    btcWalletUsd;
+    btcWalletUsd +
+    onycWalletUsd;
 
   const previousNavUsd = num(latestSnapshot?.nav_usd);
-  const navDropPct =
-    previousNavUsd > 0 ? ((previousNavUsd - nav_usd) / previousNavUsd) * 100 : 0;
+  const navDropPct = previousNavUsd > 0 ? ((previousNavUsd - nav_usd) / previousNavUsd) * 100 : 0;
 
-  // 額外保護：如果這次有用 fallback，但 NAV 還是異常大跌，直接沿用上一筆 DeFi 值重算一次
   if (
     latestSnapshot &&
     (web3EthUsedFallback || web3SolUsedFallback) &&
@@ -675,6 +587,7 @@ async function main() {
       usd: forcedEth,
       platforms: [{ platformName: "__forced_prev_snapshot__", currencyAmount: forcedEth }],
     };
+
     solDefi = {
       usd: forcedSol,
       platforms: [{ platformName: "__forced_prev_snapshot__", currencyAmount: forcedSol }],
@@ -686,7 +599,8 @@ async function main() {
       solDefi.usd +
       ethWalletUsd +
       solWalletUsd +
-      btcWalletUsd;
+      btcWalletUsd +
+      onycWalletUsd;
 
     console.log("[nav-guard] abnormal drop detected while web3 fallback used -> force previous DeFi values", {
       previous_nav_usd: previousNavUsd,
@@ -702,11 +616,12 @@ async function main() {
     eth_wallet_usd: ethWalletUsd,
     sol_wallet_usd: solWalletUsd,
     btc_wallet_usd: btcWalletUsd,
+    onyc_wallet_usd: onycWalletUsd,
   };
 
   const meta = {
     source:
-      "okx_cex(totalEq) + okx_web3_defi(platform_list) + wallet_rpc(eth/sol + usdc/usdt + btc)",
+      "okx_cex(totalEq) + okx_web3_defi(platform_list) + wallet_rpc(eth/sol + usdc/usdt + btc + onyc)",
     breakdown_rollup,
     rpc_wallet_assets: {
       eth: ethWallet.assets,
@@ -717,8 +632,9 @@ async function main() {
       eth_wallet_usd: ethWalletUsd,
       sol_wallet_usd: solWalletUsd,
       btc_wallet_usd: btcWalletUsd,
+      onyc_wallet_usd: onycWalletUsd,
       eth: { ETH: ethAmount, USDC: ethUsdc, USDT: ethUsdt },
-      sol: { SOL: solAmount, USDC: solUsdc, USDT: solUsdt },
+      sol: { SOL: solAmount, USDC: solUsdc, USDT: solUsdt, ONYC: solOnyc },
       btc: { BTC: btcAmount },
       prices_used: prices,
     },
@@ -733,6 +649,8 @@ async function main() {
       chainIds: { eth: OKX_WEB3_ETH_CHAIN_ID, sol: OKX_WEB3_SOL_CHAIN_ID },
       btc_wallet_address: BTC_WALLET_ADDRESS,
       axis_base_url: MONEYFLOW_AXIS_BASE_URL,
+      onyc_mint: SOL_MINTS.ONYC,
+      onyc_price_usd: onycPriceUsd,
 
       previous_snapshot: latestSnapshot
         ? {
@@ -767,8 +685,9 @@ async function main() {
   console.log(`[${ts}] NAV(USD)=${nav_usd.toFixed(2)} breakdown=`, {
     ...breakdown_rollup,
     eth_wallet_detail: { ETH: ethAmount, USDC: ethUsdc, USDT: ethUsdt },
-    sol_wallet_detail: { SOL: solAmount, USDC: solUsdc, USDT: solUsdt },
+    sol_wallet_detail: { SOL: solAmount, USDC: solUsdc, USDT: solUsdt, ONYC: solOnyc },
     btc_wallet_detail: { BTC: btcAmount },
+    prices_used: prices,
     web3_fetch: {
       eth: { status: web3EthStatus, used_fallback: web3EthUsedFallback, error: web3EthError },
       sol: { status: web3SolStatus, used_fallback: web3SolUsedFallback, error: web3SolError },
@@ -777,11 +696,9 @@ async function main() {
     nav_drop_pct: navDropPct,
   });
 
-  // 5) 先寫 NAV
   await writeNavSnapshot({ ts, nav_usd, meta });
   console.log("✅ nav_snapshots inserted (with meta)");
 
-  // 6) 再寫 WTD live snapshot
   try {
     const pnlWeek = await fetchPnlWeek();
 
