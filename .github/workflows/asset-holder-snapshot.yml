@@ -1,0 +1,17 @@
+name: Asset Holder Snapshot
+
+on:
+  schedule:
+    # 每 30 分鐘更新一次
+    - cron: "*/30 * * * *"
+
+  workflow_dispatch: {}
+
+jobs:
+  update-asset-holder-history:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger holder snapshot API
+        run: |
+          curl -L "https://moneyflow-axis.vercel.app/api/watchlist/onyc"
