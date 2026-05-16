@@ -2,8 +2,8 @@ name: Asset Holder Snapshot
 
 on:
   schedule:
-    # 每 30 分鐘更新一次
-    - cron: "*/30 * * * *"
+    # 每 15 分鐘更新一次
+    - cron: "*/15 * * * *"
 
   workflow_dispatch: {}
 
