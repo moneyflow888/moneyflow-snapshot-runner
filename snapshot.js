@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { ethers } from "ethers";
 import { getKaminoPortfolio } from "./kamino-portfolio.js";
+import { getMorphoPortfolio } from "./morpho-portfolio.js";
 
 const env = (k) => (process.env[k] ?? "").toString().trim();
 
