@@ -32,17 +32,11 @@ async function readJson(res) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchPricesUsd(symbols) {
-  const map = {
-    BTC: "bitcoin",
-    ETH: "ethereum",
-    SOL: "solana",
-  };
-
+  const map = { BTC: "bitcoin", ETH: "ethereum", SOL: "solana" };
   const ids = [...new Set(symbols.map((s) => map[s]).filter(Boolean))];
   if (ids.length === 0) return {};
 
-  const url = "https://api.coingecko.com/api/v3/simple/price";
-  const { data } = await axios.get(url, {
+  const { data } = await axios.get("https://api.coingecko.com/api/v3/simple/price", {
     params: { ids: ids.join(","), vs_currencies: "usd" },
     timeout: 15000,
   });
@@ -94,9 +88,7 @@ const MONEYFLOW_AXIS_BASE_URL =
 
 async function fetchPnlWeek() {
   const base = MONEYFLOW_AXIS_BASE_URL.replace(/\/+$/, "");
-  const url = `${base}/api/public/pnl-week`;
-
-  const res = await fetch(url, {
+  const res = await fetch(`${base}/api/public/pnl-week`, {
     method: "GET",
     headers: { Accept: "application/json" },
   });
@@ -127,8 +119,7 @@ async function okxCexRequest({ method, requestPath, bodyObj }) {
   const body = bodyObj ? JSON.stringify(bodyObj) : "";
   const sign = okxSign({ secret: OKX_API_SECRET, timestamp: ts, method, requestPath, body });
 
-  const url = `${OKX_BASE_URL}${requestPath}`;
-  const res = await fetch(url, {
+  const res = await fetch(`${OKX_BASE_URL}${requestPath}`, {
     method,
     headers: {
       "OK-ACCESS-KEY": OKX_API_KEY,
@@ -189,10 +180,9 @@ async function fetchSolWallet(ownerStr) {
     programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
   });
 
-  const tokenAccounts = resp?.value || [];
   const mintToAmount = new Map();
 
-  for (const ta of tokenAccounts) {
+  for (const ta of resp?.value || []) {
     const info = ta.account?.data?.parsed?.info;
     const mint = info?.mint;
     const uiAmount = Number(info?.tokenAmount?.uiAmount);
@@ -240,7 +230,6 @@ async function fetchEthWallet(ownerStr) {
   if (!ownerStr) return { assets: [] };
 
   const provider = await makeWorkingEvmProvider();
-
   const wei = await provider.getBalance(ownerStr);
   const eth = Number(ethers.formatEther(wei));
 
@@ -272,8 +261,7 @@ async function fetchBtcWallet(address) {
 
   for (const base of BTC_ADDRESS_API_CANDIDATES) {
     try {
-      const url = `${base}/address/${encodeURIComponent(address)}`;
-      const res = await fetch(url, {
+      const res = await fetch(`${base}/address/${encodeURIComponent(address)}`, {
         method: "GET",
         headers: { Accept: "application/json" },
       });
@@ -291,14 +279,7 @@ async function fetchBtcWallet(address) {
 
       return {
         assets: [{ symbol: "BTC", amount: btc }],
-        raw: {
-          provider: base,
-          sats,
-          chainFunded,
-          chainSpent,
-          mempoolFunded,
-          mempoolSpent,
-        },
+        raw: { provider: base, sats, chainFunded, chainSpent, mempoolFunded, mempoolSpent },
       };
     } catch (e) {
       lastErr = e;
@@ -360,10 +341,9 @@ async function okxWeb3Request({ path, bodyObj }) {
 
   if (OKX_WEB3_PROJECT) headers["OK-ACCESS-PROJECT"] = OKX_WEB3_PROJECT;
 
-  const url = `${OKX_WEB3_BASE_URL}${path}`;
-  const res = await fetch(url, { method, headers, body });
-
+  const res = await fetch(`${OKX_WEB3_BASE_URL}${path}`, { method, headers, body });
   const j = await readJson(res);
+
   if (!j.ok) throw new Error(`OKX WEB3 HTTP ${j.status}: ${j.raw || JSON.stringify(j.data)}`);
 
   const code = String(j?.data?.code ?? "");
@@ -383,8 +363,7 @@ async function okxWeb3RequestWithRetry(args, maxRetry = 6) {
       return await okxWeb3Request(args);
     } catch (e) {
       lastErr = e;
-      const msg = String(e?.message || "");
-      const is429 = isOkxWeb3RateLimitMessage(msg);
+      const is429 = isOkxWeb3RateLimitMessage(e?.message || "");
 
       if (is429) {
         const wait = 800 * Math.pow(2, i) + Math.floor(Math.random() * 250);
@@ -403,27 +382,27 @@ async function okxWeb3RequestWithRetry(args, maxRetry = 6) {
 async function getOkxWeb3DefiUsd({ chainId, walletAddress }) {
   if (!walletAddress) return { usd: 0, platforms: [] };
 
-  const payload = {
-    walletAddressList: [{ chainId: String(chainId), walletAddress: String(walletAddress) }],
-  };
-
   const data = await okxWeb3RequestWithRetry({
     path: "/api/v5/defi/user/asset/platform/list",
-    bodyObj: payload,
+    bodyObj: {
+      walletAddressList: [{ chainId: String(chainId), walletAddress: String(walletAddress) }],
+    },
   });
 
-  const list = data?.data?.walletIdPlatformList?.[0]?.platformList || [];
-  const platforms = Array.isArray(list) ? list : [];
-
-  const usd = platforms.reduce((acc, p) => acc + num(p?.currencyAmount), 0);
+  const platforms = data?.data?.walletIdPlatformList?.[0]?.platformList || [];
+  const usd = Array.isArray(platforms)
+    ? platforms.reduce((acc, p) => acc + num(p?.currencyAmount), 0)
+    : 0;
 
   return {
     usd,
-    platforms: platforms.map((p) => ({
-      platformName: p?.platformName,
-      currencyAmount: num(p?.currencyAmount),
-      investmentCount: p?.investmentCount,
-    })),
+    platforms: Array.isArray(platforms)
+      ? platforms.map((p) => ({
+          platformName: p?.platformName,
+          currencyAmount: num(p?.currencyAmount),
+          investmentCount: p?.investmentCount,
+        }))
+      : [],
   };
 }
 
@@ -481,10 +460,10 @@ async function main() {
   let web3SolError = null;
   let web3EthUsedFallback = false;
   let web3SolUsedFallback = false;
-let morphoStatus="pending";
-let morphoError=null;
-let morphoUsedFallback=false;
-  
+
+  let morphoStatus = "pending";
+  let morphoError = null;
+  let morphoUsedFallback = false;
 
   let kaminoStatus = "pending";
   let kaminoError = null;
@@ -494,74 +473,60 @@ let morphoUsedFallback=false;
   const prevSolDefiUsd = getBreakdownValue(latestSnapshot?.meta, "okx_web3_defi_sol_usd");
 
   try {
+    const morpho = await getMorphoPortfolio();
 
-   const morpho=
-      await getMorphoPortfolio();
+    ethDefi = {
+      usd: morpho.total_assets_usd,
+      platforms: [
+        {
+          platformName: "Morpho",
+          currencyAmount: morpho.total_assets_usd,
+          vaults: morpho.vaults || [],
+        },
+      ],
+    };
 
-   ethDefi={
-      usd:morpho.total_assets_usd,
-      platforms:[
-      {
-         platformName:"Morpho",
-         currencyAmount:
-            morpho.total_assets_usd
-      }]
-   };
+    morphoStatus = "ok";
+    web3EthStatus = "morpho_ok";
 
-   morphoStatus="ok";
-   web3EthStatus="morpho_ok";
+    console.log("[morpho] success:", morpho.total_assets_usd);
+  } catch (e) {
+    morphoStatus = "fallback_okx";
+    morphoError = e?.message || String(e);
+    morphoUsedFallback = true;
 
-   console.log(
-      "[morpho] success:",
-      morpho.total_assets_usd
-   );
+    console.log("[morpho] failed -> use OKX ETH fallback:", morphoError);
 
-}
-catch(e){
+    if (!web3Enabled()) {
+      web3EthStatus = "ERROR";
+      web3EthError = "Morpho failed and OKX Web3 is disabled";
+      throw new Error("Morpho failed and OKX Web3 is disabled");
+    }
 
-   morphoStatus="fallback_okx";
-   morphoError=
-      e?.message||String(e);
-
-   morphoUsedFallback=true;
-
-   console.log(
-      "[morpho] failed -> OKX fallback",
-      morphoError
-   );
-
-   try{
-
-      ethDefi=
-      await getOkxWeb3DefiUsd({
-         chainId:
-            OKX_WEB3_ETH_CHAIN_ID,
-
-         walletAddress:
-            ETH_WALLET_ADDRESS,
+    try {
+      ethDefi = await getOkxWeb3DefiUsd({
+        chainId: OKX_WEB3_ETH_CHAIN_ID,
+        walletAddress: ETH_WALLET_ADDRESS,
       });
 
-      web3EthStatus=
-         "okx_fallback_ok";
+      web3EthStatus = "okx_fallback_ok";
+      web3EthUsedFallback = true;
 
-   }
+      console.log("[web3 ETH] OKX fallback success:", ethDefi.usd);
+    } catch (okxErr) {
+      web3EthStatus = "ERROR";
+      web3EthError = okxErr?.message || String(okxErr);
 
-   catch(okxErr){
+      console.log("[morpho+okx] BOTH FAILED", {
+        morpho_error: morphoError,
+        okx_error: web3EthError,
+      });
 
-      web3EthStatus=
-         "ERROR";
+      throw new Error("Morpho + OKX ETH both failed");
+    }
+  }
 
-      web3EthError=
-      okxErr?.message
-      ||String(okxErr);
-
-      throw new Error(
-         "Morpho + OKX ETH both failed"
-      );
-
-   }
-
-}
+  await sleep(350);
 
   try {
     const kamino = await getKaminoPortfolio();
@@ -585,12 +550,11 @@ catch(e){
     kaminoError = e?.message || String(e);
     kaminoUsedFallback = true;
 
-    console.log("[kamino] failed -> use OKX fallback:", kaminoError);
+    console.log("[kamino] failed -> use OKX SOL fallback:", kaminoError);
 
     if (!web3Enabled()) {
       web3SolStatus = "ERROR";
       web3SolError = "Kamino failed and OKX Web3 is disabled";
-
       throw new Error("Kamino failed and OKX Web3 is disabled");
     }
 
@@ -601,6 +565,7 @@ catch(e){
       });
 
       web3SolStatus = "okx_fallback_ok";
+      web3SolUsedFallback = true;
 
       console.log("[web3 SOL] OKX fallback success:", solDefi.usd);
     } catch (okxErr) {
@@ -650,7 +615,7 @@ catch(e){
 
   prices.ONYC = onycPriceUsd;
 
-  let nav_usd =
+  const nav_usd =
     cexUsd +
     ethDefi.usd +
     solDefi.usd +
@@ -661,35 +626,6 @@ catch(e){
 
   const previousNavUsd = num(latestSnapshot?.nav_usd);
   const navDropPct = previousNavUsd > 0 ? ((previousNavUsd - nav_usd) / previousNavUsd) * 100 : 0;
-
-  if (
-    latestSnapshot &&
-    web3EthUsedFallback &&
-    previousNavUsd > 0 &&
-    navDropPct > 30
-  ) {
-    const forcedEth = prevEthDefiUsd;
-
-    ethDefi = {
-      usd: forcedEth,
-      platforms: [{ platformName: "__forced_prev_snapshot__", currencyAmount: forcedEth }],
-    };
-
-    nav_usd =
-      cexUsd +
-      ethDefi.usd +
-      solDefi.usd +
-      ethWalletUsd +
-      solWalletUsd +
-      btcWalletUsd +
-      onycWalletUsd;
-
-    console.log("[nav-guard] abnormal drop detected while ETH web3 fallback used -> force previous ETH DeFi value", {
-      previous_nav_usd: previousNavUsd,
-      recalculated_nav_usd: nav_usd,
-      nav_drop_pct: navDropPct,
-    });
-  }
 
   const breakdown_rollup = {
     okx_cex_usd: cexUsd,
@@ -703,8 +639,18 @@ catch(e){
 
   const meta = {
     source:
-      "okx_cex(totalEq) + okx_web3_defi_eth(platform_list) + kamino_or_okx_web3_sol + wallet_rpc(eth/sol + usdc/usdt + btc + onyc)",
+      "okx_cex(totalEq) + morpho_or_okx_web3_eth + kamino_or_okx_web3_sol + wallet_rpc(eth/sol + usdc/usdt + btc + onyc)",
     breakdown_rollup,
+
+    morpho: {
+      status: morphoStatus,
+      source_used: morphoStatus === "ok" ? "morpho_earn_api" : "okx_web3_fallback",
+      used_fallback: morphoUsedFallback,
+      error: morphoError,
+      net_value_usd: ethDefi.usd,
+      updated_at: ts,
+    },
+
     kamino: {
       status: kaminoStatus,
       source_used: kaminoStatus === "ok" ? "kamino_portfolio" : "okx_web3_fallback",
@@ -713,11 +659,13 @@ catch(e){
       net_value_usd: solDefi.usd,
       updated_at: ts,
     },
+
     rpc_wallet_assets: {
       eth: ethWallet.assets,
       sol: solWallet.assets,
       btc: btcWallet.assets,
     },
+
     rpc_wallet_usd: {
       eth_wallet_usd: ethWalletUsd,
       sol_wallet_usd: solWalletUsd,
@@ -728,11 +676,14 @@ catch(e){
       btc: { BTC: btcAmount },
       prices_used: prices,
     },
+
     okx_web3_platforms: {
       eth: ethDefi.platforms,
       sol: solDefi.platforms,
     },
+
     btc_wallet_debug: btcWallet.raw || null,
+
     debug: {
       okx_web3_project_present: !!OKX_WEB3_PROJECT,
       okx_web3_base_url: OKX_WEB3_BASE_URL,
@@ -745,13 +696,18 @@ catch(e){
       previous_snapshot: latestSnapshot
         ? {
             ts: latestSnapshot.ts,
-            nav_usd: num(latestSnapshot.nav_usd),
+            nav_usd: previousNavUsd,
             okx_web3_defi_eth_usd: prevEthDefiUsd,
             okx_web3_defi_sol_usd: prevSolDefiUsd,
           }
         : null,
 
       web3_fetch: {
+        morpho: {
+          status: morphoStatus,
+          used_fallback: morphoUsedFallback,
+          error: morphoError,
+        },
         kamino: {
           status: kaminoStatus,
           used_fallback: kaminoUsedFallback,
@@ -783,23 +739,7 @@ catch(e){
     sol_wallet_detail: { SOL: solAmount, USDC: solUsdc, USDT: solUsdt, ONYC: solOnyc },
     btc_wallet_detail: { BTC: btcAmount },
     prices_used: prices,
-    web3_fetch: {
-      kamino: {
-        status: kaminoStatus,
-        used_fallback: kaminoUsedFallback,
-        error: kaminoError,
-      },
-      eth: {
-        status: web3EthStatus,
-        used_fallback: web3EthUsedFallback,
-        error: web3EthError,
-      },
-      sol: {
-        status: web3SolStatus,
-        used_fallback: web3SolUsedFallback,
-        error: web3SolError,
-      },
-    },
+    web3_fetch: meta.debug.web3_fetch,
     previous_nav_usd: previousNavUsd,
     nav_drop_pct: navDropPct,
   });
