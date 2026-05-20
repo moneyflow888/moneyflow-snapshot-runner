@@ -7,40 +7,32 @@ function num(v) {
 }
 
 export async function getKaminoPortfolio() {
-  const res = await fetch(
-    KAMINO_PNL_URL
-  );
+  const res = await fetch(KAMINO_PNL_URL, {
+    headers: {
+      accept: "application/json",
+    },
+  });
 
   if (!res.ok) {
-    throw new Error(
-      `Kamino API failed ${res.status}`
-    );
+    throw new Error(`Kamino API failed: ${res.status}`);
   }
 
   const data = await res.json();
 
-  const pnlUsd =
-    num(data?.usd);
-
-  const investedUsd =
-    num(data?.invested?.usd);
-
-  const netValueUsd =
-    investedUsd + pnlUsd;
+  const pnlUsd = num(data?.usd);
+  const investedUsd = num(data?.invested?.usd);
+  const netValueUsd = investedUsd + pnlUsd;
 
   if (netValueUsd <= 0) {
-    throw new Error(
-      "invalid net value"
-    );
+    throw new Error("Kamino net value invalid");
   }
 
   return {
-    source:"kamino",
-
-    investedUsd,
-
-    pnlUsd,
-
-    netValueUsd
+    source_used: "kamino_portfolio",
+    status: "OK",
+    invested_usd: investedUsd,
+    pnl_usd: pnlUsd,
+    net_value_usd: netValueUsd,
+    updated_at: new Date().toISOString(),
   };
 }
