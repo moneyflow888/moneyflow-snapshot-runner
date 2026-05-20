@@ -716,17 +716,25 @@ let kaminoUsedFallback = false;
         : null,
 
       web3_fetch: {
-        eth: {
-          status: web3EthStatus,
-          used_fallback: web3EthUsedFallback,
-          error: web3EthError,
-        },
-        sol: {
-          status: web3SolStatus,
-          used_fallback: web3SolUsedFallback,
-          error: web3SolError,
-        },
-      },
+
+  kamino: {
+    status: kaminoStatus,
+    used_fallback: kaminoUsedFallback,
+    error: kaminoError,
+  },
+
+  eth: {
+    status: web3EthStatus,
+    used_fallback: web3EthUsedFallback,
+    error: web3EthError,
+  },
+
+  sol: {
+    status: web3SolStatus,
+    used_fallback: web3SolUsedFallback,
+    error: web3SolError,
+  },
+},
 
       nav_guard: {
         previous_nav_usd: previousNavUsd,
@@ -743,9 +751,25 @@ let kaminoUsedFallback = false;
     btc_wallet_detail: { BTC: btcAmount },
     prices_used: prices,
     web3_fetch: {
-      eth: { status: web3EthStatus, used_fallback: web3EthUsedFallback, error: web3EthError },
-      sol: { status: web3SolStatus, used_fallback: web3SolUsedFallback, error: web3SolError },
-    },
+
+  kamino:{
+    status:kaminoStatus,
+    used_fallback:kaminoUsedFallback,
+    error:kaminoError
+  },
+
+  eth:{
+    status:web3EthStatus,
+    used_fallback:web3EthUsedFallback,
+    error:web3EthError
+  },
+
+  sol:{
+    status:web3SolStatus,
+    used_fallback:web3SolUsedFallback,
+    error:web3SolError
+  }
+},
     previous_nav_usd: previousNavUsd,
     nav_drop_pct: navDropPct,
   });
