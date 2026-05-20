@@ -481,6 +481,10 @@ async function main() {
   let web3SolError = null;
   let web3EthUsedFallback = false;
   let web3SolUsedFallback = false;
+let morphoStatus="pending";
+let morphoError=null;
+let morphoUsedFallback=false;
+  
 
   let kaminoStatus = "pending";
   let kaminoError = null;
@@ -489,31 +493,75 @@ async function main() {
   const prevEthDefiUsd = getBreakdownValue(latestSnapshot?.meta, "okx_web3_defi_eth_usd");
   const prevSolDefiUsd = getBreakdownValue(latestSnapshot?.meta, "okx_web3_defi_sol_usd");
 
-  if (web3Enabled()) {
-    web3EthStatus = "ok";
+  try {
 
-    try {
-      ethDefi = await getOkxWeb3DefiUsd({
-        chainId: OKX_WEB3_ETH_CHAIN_ID,
-        walletAddress: ETH_WALLET_ADDRESS,
+   const morpho=
+      await getMorphoPortfolio();
+
+   ethDefi={
+      usd:morpho.total_assets_usd,
+      platforms:[
+      {
+         platformName:"Morpho",
+         currencyAmount:
+            morpho.total_assets_usd
+      }]
+   };
+
+   morphoStatus="ok";
+   web3EthStatus="morpho_ok";
+
+   console.log(
+      "[morpho] success:",
+      morpho.total_assets_usd
+   );
+
+}
+catch(e){
+
+   morphoStatus="fallback_okx";
+   morphoError=
+      e?.message||String(e);
+
+   morphoUsedFallback=true;
+
+   console.log(
+      "[morpho] failed -> OKX fallback",
+      morphoError
+   );
+
+   try{
+
+      ethDefi=
+      await getOkxWeb3DefiUsd({
+         chainId:
+            OKX_WEB3_ETH_CHAIN_ID,
+
+         walletAddress:
+            ETH_WALLET_ADDRESS,
       });
-    } catch (e) {
-      web3EthStatus = "fallback_previous_snapshot";
-      web3EthError = e?.message || String(e);
-      web3EthUsedFallback = latestSnapshot != null;
-      ethDefi = {
-        usd: latestSnapshot ? prevEthDefiUsd : 0,
-        platforms: latestSnapshot
-          ? [{ platformName: "__fallback_prev_snapshot__", currencyAmount: prevEthDefiUsd }]
-          : [],
-      };
-      console.log(`[web3 ETH] failed -> use ${latestSnapshot ? "previous snapshot" : "0"} . reason=`, web3EthError);
-    }
 
-    await sleep(350);
-  } else {
-    console.log("[web3 ETH] disabled: missing OKX_WEB3_*");
-  }
+      web3EthStatus=
+         "okx_fallback_ok";
+
+   }
+
+   catch(okxErr){
+
+      web3EthStatus=
+         "ERROR";
+
+      web3EthError=
+      okxErr?.message
+      ||String(okxErr);
+
+      throw new Error(
+         "Morpho + OKX ETH both failed"
+      );
+
+   }
+
+}
 
   try {
     const kamino = await getKaminoPortfolio();
