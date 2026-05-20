@@ -560,32 +560,7 @@ try {
 
     web3SolStatus="ok";
 
-  } catch (okxErr) {
-
-    web3SolStatus="ERROR";
-
-    web3SolError=
-      okxErr?.message ||
-      String(okxErr);
-
-    console.log(
-      "[kamino+okx] BOTH FAILED"
-    );
-
-    throw new Error(
-      "Kamino + OKX SOL both failed"
-    );
-  }
-} catch (e) {
-      web3SolStatus = "fallback_previous_snapshot";
-      web3SolError = e?.message || String(e);
-      web3SolUsedFallback = latestSnapshot != null;
-      solDefi = {
-        usd: latestSnapshot ? prevSolDefiUsd : 0,
-        platforms: latestSnapshot
-          ? [{ platformName: "__fallback_prev_snapshot__", currencyAmount: prevSolDefiUsd }]
-          : [],
-      };
+ 
       console.log(`[web3 SOL] failed -> use ${latestSnapshot ? "previous snapshot" : "0"} . reason=`, web3SolError);
     }
   } else {
