@@ -476,22 +476,20 @@ async function main() {
 
   let web3EthStatus = "disabled";
   let web3SolStatus = "disabled";
-let kaminoStatus = "disabled";
-let kaminoError = null;
-let kaminoUsedFallback = false;
-
-  
   let web3EthError = null;
   let web3SolError = null;
   let web3EthUsedFallback = false;
   let web3SolUsedFallback = false;
+
+  let kaminoStatus = "pending";
+  let kaminoError = null;
+  let kaminoUsedFallback = false;
 
   const prevEthDefiUsd = getBreakdownValue(latestSnapshot?.meta, "okx_web3_defi_eth_usd");
   const prevSolDefiUsd = getBreakdownValue(latestSnapshot?.meta, "okx_web3_defi_sol_usd");
 
   if (web3Enabled()) {
     web3EthStatus = "ok";
-    web3SolStatus = "ok";
 
     try {
       ethDefi = await getOkxWeb3DefiUsd({
@@ -512,59 +510,61 @@ let kaminoUsedFallback = false;
     }
 
     await sleep(350);
-
-try {
-  const kamino = await getKaminoPortfolio();
-
-  solDefi = {
-    usd: kamino.net_value_usd,
-    platforms: [
-      {
-        platformName: "Kamino",
-        currencyAmount: kamino.net_value_usd,
-      },
-    ],
-  };
-
-  kaminoStatus = "ok";
-
-  console.log(
-    "[kamino] success:",
-    kamino.net_value_usd
-  );
-
-} catch (e) {
-
-  kaminoStatus = "fallback_okx";
-
-  kaminoError =
-    e?.message || String(e);
-
-  kaminoUsedFallback = true;
-
-  console.log(
-    "[kamino] failed -> use OKX fallback:",
-    kaminoError
-  );
+  } else {
+    console.log("[web3 ETH] disabled: missing OKX_WEB3_*");
+  }
 
   try {
+    const kamino = await getKaminoPortfolio();
 
-    solDefi =
-      await getOkxWeb3DefiUsd({
-        chainId:
-          OKX_WEB3_SOL_CHAIN_ID,
+    solDefi = {
+      usd: kamino.net_value_usd,
+      platforms: [
+        {
+          platformName: "Kamino",
+          currencyAmount: kamino.net_value_usd,
+        },
+      ],
+    };
 
-        walletAddress:
-          SOL_WALLET_ADDRESS,
+    kaminoStatus = "ok";
+    web3SolStatus = "kamino_ok";
+
+    console.log("[kamino] success:", kamino.net_value_usd);
+  } catch (e) {
+    kaminoStatus = "fallback_okx";
+    kaminoError = e?.message || String(e);
+    kaminoUsedFallback = true;
+
+    console.log("[kamino] failed -> use OKX fallback:", kaminoError);
+
+    if (!web3Enabled()) {
+      web3SolStatus = "ERROR";
+      web3SolError = "Kamino failed and OKX Web3 is disabled";
+
+      throw new Error("Kamino failed and OKX Web3 is disabled");
+    }
+
+    try {
+      solDefi = await getOkxWeb3DefiUsd({
+        chainId: OKX_WEB3_SOL_CHAIN_ID,
+        walletAddress: SOL_WALLET_ADDRESS,
       });
 
-    web3SolStatus="ok";
+      web3SolStatus = "okx_fallback_ok";
 
- 
-      console.log(`[web3 SOL] failed -> use ${latestSnapshot ? "previous snapshot" : "0"} . reason=`, web3SolError);
+      console.log("[web3 SOL] OKX fallback success:", solDefi.usd);
+    } catch (okxErr) {
+      web3SolStatus = "ERROR";
+      web3SolError = okxErr?.message || String(okxErr);
+
+      console.log("[kamino+okx] BOTH FAILED", {
+        kamino_error: kaminoError,
+        okx_error: web3SolError,
+      });
+
+      throw new Error("Kamino + OKX SOL both failed");
     }
-  } else {
-    console.log("[web3] disabled: missing OKX_WEB3_*");
   }
 
   const ethAmount = Number(ethWallet.assets?.find((x) => x.symbol === "ETH")?.amount || 0);
@@ -615,21 +615,15 @@ try {
 
   if (
     latestSnapshot &&
-    (web3EthUsedFallback || web3SolUsedFallback) &&
+    web3EthUsedFallback &&
     previousNavUsd > 0 &&
     navDropPct > 30
   ) {
     const forcedEth = prevEthDefiUsd;
-    const forcedSol = prevSolDefiUsd;
 
     ethDefi = {
       usd: forcedEth,
       platforms: [{ platformName: "__forced_prev_snapshot__", currencyAmount: forcedEth }],
-    };
-
-    solDefi = {
-      usd: forcedSol,
-      platforms: [{ platformName: "__forced_prev_snapshot__", currencyAmount: forcedSol }],
     };
 
     nav_usd =
@@ -641,7 +635,7 @@ try {
       btcWalletUsd +
       onycWalletUsd;
 
-    console.log("[nav-guard] abnormal drop detected while web3 fallback used -> force previous DeFi values", {
+    console.log("[nav-guard] abnormal drop detected while ETH web3 fallback used -> force previous ETH DeFi value", {
       previous_nav_usd: previousNavUsd,
       recalculated_nav_usd: nav_usd,
       nav_drop_pct: navDropPct,
@@ -660,8 +654,16 @@ try {
 
   const meta = {
     source:
-      "okx_cex(totalEq) + okx_web3_defi(platform_list) + wallet_rpc(eth/sol + usdc/usdt + btc + onyc)",
+      "okx_cex(totalEq) + okx_web3_defi_eth(platform_list) + kamino_or_okx_web3_sol + wallet_rpc(eth/sol + usdc/usdt + btc + onyc)",
     breakdown_rollup,
+    kamino: {
+      status: kaminoStatus,
+      source_used: kaminoStatus === "ok" ? "kamino_portfolio" : "okx_web3_fallback",
+      used_fallback: kaminoUsedFallback,
+      error: kaminoError,
+      net_value_usd: solDefi.usd,
+      updated_at: ts,
+    },
     rpc_wallet_assets: {
       eth: ethWallet.assets,
       sol: solWallet.assets,
@@ -701,25 +703,22 @@ try {
         : null,
 
       web3_fetch: {
-
-  kamino: {
-    status: kaminoStatus,
-    used_fallback: kaminoUsedFallback,
-    error: kaminoError,
-  },
-
-  eth: {
-    status: web3EthStatus,
-    used_fallback: web3EthUsedFallback,
-    error: web3EthError,
-  },
-
-  sol: {
-    status: web3SolStatus,
-    used_fallback: web3SolUsedFallback,
-    error: web3SolError,
-  },
-},
+        kamino: {
+          status: kaminoStatus,
+          used_fallback: kaminoUsedFallback,
+          error: kaminoError,
+        },
+        eth: {
+          status: web3EthStatus,
+          used_fallback: web3EthUsedFallback,
+          error: web3EthError,
+        },
+        sol: {
+          status: web3SolStatus,
+          used_fallback: web3SolUsedFallback,
+          error: web3SolError,
+        },
+      },
 
       nav_guard: {
         previous_nav_usd: previousNavUsd,
@@ -736,25 +735,22 @@ try {
     btc_wallet_detail: { BTC: btcAmount },
     prices_used: prices,
     web3_fetch: {
-
-  kamino:{
-    status:kaminoStatus,
-    used_fallback:kaminoUsedFallback,
-    error:kaminoError
-  },
-
-  eth:{
-    status:web3EthStatus,
-    used_fallback:web3EthUsedFallback,
-    error:web3EthError
-  },
-
-  sol:{
-    status:web3SolStatus,
-    used_fallback:web3SolUsedFallback,
-    error:web3SolError
-  }
-},
+      kamino: {
+        status: kaminoStatus,
+        used_fallback: kaminoUsedFallback,
+        error: kaminoError,
+      },
+      eth: {
+        status: web3EthStatus,
+        used_fallback: web3EthUsedFallback,
+        error: web3EthError,
+      },
+      sol: {
+        status: web3SolStatus,
+        used_fallback: web3SolUsedFallback,
+        error: web3SolError,
+      },
+    },
     previous_nav_usd: previousNavUsd,
     nav_drop_pct: navDropPct,
   });
