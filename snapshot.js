@@ -4,6 +4,7 @@ import axios from "axios";
 import { createClient } from "@supabase/supabase-js";
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { ethers } from "ethers";
+import { getKaminoPortfolio } from "./kamino-portfolio.js";
 
 const env = (k) => (process.env[k] ?? "").toString().trim();
 
@@ -475,6 +476,11 @@ async function main() {
 
   let web3EthStatus = "disabled";
   let web3SolStatus = "disabled";
+let kaminoStatus = "disabled";
+let kaminoError = null;
+let kaminoUsedFallback = false;
+
+  
   let web3EthError = null;
   let web3SolError = null;
   let web3EthUsedFallback = false;
@@ -508,11 +514,59 @@ async function main() {
     await sleep(350);
 
     try {
-      solDefi = await getOkxWeb3DefiUsd({
-        chainId: OKX_WEB3_SOL_CHAIN_ID,
-        walletAddress: SOL_WALLET_ADDRESS,
+  const kamino = await getKaminoPortfolio();
+
+  solDefi = {
+    usd: kamino.net_value_usd,
+    platforms: [
+      {
+        platformName: "Kamino",
+        currencyAmount: kamino.net_value_usd,
+      },
+    ],
+  };
+
+  kaminoStatus = "ok";
+
+  console.log(
+    "[kamino] success:",
+    kamino.net_value_usd
+  );
+
+} catch (e) {
+
+  kaminoStatus = "fallback_okx";
+
+  kaminoError =
+    e?.message || String(e);
+
+  console.log(
+    "[kamino] failed -> use OKX fallback:",
+    kaminoError
+  );
+
+  try {
+
+    solDefi =
+      await getOkxWeb3DefiUsd({
+        chainId:
+          OKX_WEB3_SOL_CHAIN_ID,
+
+        walletAddress:
+          SOL_WALLET_ADDRESS,
       });
-    } catch (e) {
+
+  } catch (okxErr) {
+
+    console.log(
+      "[kamino+okx] BOTH FAILED"
+    );
+
+    throw new Error(
+      "Kamino + OKX SOL both failed"
+    );
+  }
+} catch (e) {
       web3SolStatus = "fallback_previous_snapshot";
       web3SolError = e?.message || String(e);
       web3SolUsedFallback = latestSnapshot != null;
