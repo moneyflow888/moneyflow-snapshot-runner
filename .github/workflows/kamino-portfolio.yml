@@ -1,4 +1,4 @@
-name: Kamino Portfolio Test
+name: Kamino Portfolio
 
 on:
   workflow_dispatch: {}
