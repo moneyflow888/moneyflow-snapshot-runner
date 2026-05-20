@@ -513,7 +513,7 @@ let kaminoUsedFallback = false;
 
     await sleep(350);
 
-    try {
+try {
   const kamino = await getKaminoPortfolio();
 
   solDefi = {
@@ -540,6 +540,8 @@ let kaminoUsedFallback = false;
   kaminoError =
     e?.message || String(e);
 
+  kaminoUsedFallback = true;
+
   console.log(
     "[kamino] failed -> use OKX fallback:",
     kaminoError
@@ -556,7 +558,15 @@ let kaminoUsedFallback = false;
           SOL_WALLET_ADDRESS,
       });
 
+    web3SolStatus="ok";
+
   } catch (okxErr) {
+
+    web3SolStatus="ERROR";
+
+    web3SolError=
+      okxErr?.message ||
+      String(okxErr);
 
     console.log(
       "[kamino+okx] BOTH FAILED"
