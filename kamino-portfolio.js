@@ -6,67 +6,41 @@ function num(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-async function getKaminoPortfolio() {
-  const res = await fetch(KAMINO_PNL_URL, {
-    headers: {
-      accept: "application/json",
-    },
-  });
+export async function getKaminoPortfolio() {
+  const res = await fetch(
+    KAMINO_PNL_URL
+  );
 
   if (!res.ok) {
     throw new Error(
-      `Kamino API failed: ${res.status}`
+      `Kamino API failed ${res.status}`
     );
   }
 
   const data = await res.json();
 
-  const pnlUsd = num(data?.usd);
+  const pnlUsd =
+    num(data?.usd);
 
-  const investedUsd = num(
-    data?.invested?.usd
-  );
+  const investedUsd =
+    num(data?.invested?.usd);
 
   const netValueUsd =
     investedUsd + pnlUsd;
 
   if (netValueUsd <= 0) {
     throw new Error(
-      "Kamino net value invalid"
+      "invalid net value"
     );
   }
 
   return {
-    source: "kamino_portfolio",
+    source:"kamino",
 
     investedUsd,
 
     pnlUsd,
 
-    netValueUsd,
-
-    raw:data
+    netValueUsd
   };
 }
-
-async function main() {
-  const r =
-    await getKaminoPortfolio();
-
-  console.log(
-    JSON.stringify(
-      r,
-      null,
-      2
-    )
-  );
-}
-
-main().catch((e) => {
-  console.error(
-    "KAMINO_FAILED:",
-    e
-  );
-
-  process.exit(1);
-});
