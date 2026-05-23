@@ -1061,11 +1061,33 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
   };
 
   const meta = {
-    source:
-      "okx_cex(totalEq) + morpho_or_okx_web3_eth + kamino_or_okx_web3_sol + wallet_rpc(eth/sol + usdc/usdt + btc + onyc)",
-    breakdown_rollup,
+  source:
+    "okx_cex(totalEq) + morpho_or_okx_web3_eth + kamino_or_okx_web3_sol + wallet_rpc(eth/sol + usdc/usdt + btc + onyc)",
+  breakdown_rollup,
 
-    morpho: {
+  rpc_wallet_status: {
+    eth_wallet_usd:
+      ethWallet.assets?.length > 0
+        ? "ok"
+        : "error",
+
+    sol_wallet_usd:
+      solWallet.debug?.status === "ok"
+        ? "ok"
+        : solWallet.debug?.status === "failed" ||
+            solWallet.debug?.status === "empty_wallet_address"
+          ? "error"
+          : "fallback",
+
+    btc_wallet_usd:
+      btcWallet.raw?.status === "ok"
+        ? "ok"
+        : btcWallet.raw?.status
+          ? "fallback"
+          : "error",
+  },
+
+  morpho: {
       status: morphoStatus,
       source_used: morphoStatus === "ok" ? "morpho_earn_api" : "okx_web3_fallback",
       used_fallback: morphoUsedFallback,
