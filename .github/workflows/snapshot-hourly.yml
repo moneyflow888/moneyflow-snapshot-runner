@@ -45,4 +45,6 @@ jobs:
           SOL_WALLET_ADDRESS: ${{ secrets.SOL_WALLET_ADDRESS }}
           BTC_WALLET_ADDRESS: ${{ secrets.BTC_WALLET_ADDRESS }}
 
+          SOLANA_RPC_URLS: ${{ secrets.SOLANA_RPC_URLS }}
+
           MONEYFLOW_AXIS_BASE_URL: ${{ secrets.MONEYFLOW_AXIS_BASE_URL }}
