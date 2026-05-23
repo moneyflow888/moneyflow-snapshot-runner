@@ -300,26 +300,140 @@ async function makeWorkingEvmProvider() {
 }
 
 async function fetchEthWallet(ownerStr) {
-  if (!ownerStr) return { assets: [] };
+  if (!ownerStr) {
+    return { assets: [] };
+  }
 
-  const provider = await makeWorkingEvmProvider();
-  const wei = await provider.getBalance(ownerStr);
-  const eth = Number(ethers.formatEther(wei));
+  let lastAssets = [];
 
-  const assets = [{ symbol: "ETH", amount: eth }];
-
-  for (const [sym, t] of Object.entries(EVM_TOKENS)) {
+  for (const url of [...new Set(ETH_RPC_CANDIDATES)]) {
     try {
-      const c = new ethers.Contract(t.address, ERC20_ABI, provider);
-      const bal = await c.balanceOf(ownerStr);
-      const amt = Number(ethers.formatUnits(bal, t.decimals));
-      if (Number.isFinite(amt) && amt > 0) assets.push({ symbol: sym, amount: amt });
-    } catch (e) {
-      console.log(`[rpc:eth:${sym}] failed (skip):`, e?.message || e);
+      console.log("[rpc:eth] try:", url);
+
+      const provider = new ethers.JsonRpcProvider(url);
+
+      await Promise.race([
+        provider.getBlockNumber(),
+        new Promise((_, rej) =>
+          setTimeout(
+            () => rej(new Error("ETH RPC timeout")),
+            8000
+          )
+        ),
+      ]);
+
+      const wei =
+        await provider.getBalance(
+          ownerStr
+        );
+
+      const eth =
+        Number(
+          ethers.formatEther(wei)
+        );
+
+      const assets = [];
+
+      assets.push({
+        symbol: "ETH",
+        amount: eth,
+      });
+
+      for (const [sym, t] of Object.entries(EVM_TOKENS)) {
+        try {
+          const c =
+            new ethers.Contract(
+              t.address,
+              ERC20_ABI,
+              provider
+            );
+
+          const bal =
+            await c.balanceOf(
+              ownerStr
+            );
+
+          const amt =
+            Number(
+              ethers.formatUnits(
+                bal,
+                t.decimals
+              )
+            );
+
+          if (
+            Number.isFinite(amt)
+            && amt > 0
+          ) {
+            assets.push({
+              symbol: sym,
+              amount: amt,
+            });
+          }
+
+        } catch {}
+      }
+
+      const ethAmt =
+        Number(
+          assets.find(
+            x=>x.symbol==="ETH"
+          )?.amount || 0
+        );
+
+      const usdc =
+        Number(
+          assets.find(
+            x=>x.symbol==="USDC"
+          )?.amount || 0
+        );
+
+      const usdt =
+        Number(
+          assets.find(
+            x=>x.symbol==="USDT"
+          )?.amount || 0
+        );
+
+      const allZero =
+        ethAmt<=0 &&
+        usdc<=0 &&
+        usdt<=0;
+
+      if (allZero) {
+        console.log(
+          "[rpc:eth] empty -> try next:",
+          url
+        );
+
+        lastAssets = assets;
+
+        continue;
+      }
+
+      console.log(
+        "[rpc:eth] success:",
+        url
+      );
+
+      return {
+        assets
+      };
+
+    } catch(e){
+
+      console.log(
+        "[rpc:eth] failed:",
+        url,
+        e?.message || e
+      );
+
     }
   }
 
-  return { assets };
+  return {
+    assets:lastAssets
+  };
 }
 
 const BTC_ADDRESS_API_CANDIDATES = [
