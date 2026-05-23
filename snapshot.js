@@ -1066,9 +1066,25 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
   breakdown_rollup,
 
  rpc_wallet_status: {
-  eth_wallet_usd: "error",
-  sol_wallet_usd: "fallback",
-  btc_wallet_usd: "ok",
+  eth_wallet_usd:
+    ethWallet.assets?.length > 0
+      ? "ok"
+      : "error",
+
+  sol_wallet_usd:
+    solWallet.debug?.status === "ok"
+      ? "ok"
+      : solWallet.debug?.status === "failed" ||
+          solWallet.debug?.status === "empty_wallet_address"
+        ? "error"
+        : "fallback",
+
+  btc_wallet_usd:
+    btcWallet.raw?.status === "ok"
+      ? "ok"
+      : btcWallet.raw?.status
+        ? "fallback"
+        : "error",
 },
 
   morpho: {
