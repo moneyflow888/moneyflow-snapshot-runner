@@ -495,7 +495,9 @@ async function main() {
     eth_address: ETH_WALLET_ADDRESS ? "ok" : "(empty)",
     sol_address: SOL_WALLET_ADDRESS ? "ok" : "(empty)",
     sol_rpc_count: SOLANA_RPC_URLS.length,
-    btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
+sol_rpc_urls: SOLANA_RPC_URLS,
+
+btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
     axis_base_url: MONEYFLOW_AXIS_BASE_URL ? "ok" : "(empty)",
     onyc_price_usd: env("ONYC_PRICE_USD") || "1.10",
     previous_nav_present: !!latestSnapshot,
