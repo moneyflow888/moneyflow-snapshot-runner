@@ -147,7 +147,23 @@ const ETH_WALLET_ADDRESS = env("ETH_WALLET_ADDRESS");
 const BTC_WALLET_ADDRESS =
   env("BTC_WALLET_ADDRESS") || "bc1qxqkrlgtp4n7gqvy2nl60nsr57rsacd4keq0qlq";
 
-const SOLANA_RPC_URL = env("SOLANA_RPC_URL") || "https://api.mainnet-beta.solana.com";
+/**
+ * SOL RPC 備援清單
+ *
+ * GitHub Secrets 建議新增：
+ * SOLANA_RPC_URLS=https://你的helius_rpc,https://solana-rpc.publicnode.com,https://api.mainnet-beta.solana.com
+ *
+ * 如果你還沒新增 SOLANA_RPC_URLS，
+ * 這裡也會相容舊的 SOLANA_RPC_URL。
+ */
+const SOLANA_RPC_URLS = (
+  env("SOLANA_RPC_URLS") ||
+  env("SOLANA_RPC_URL") ||
+  "https://solana-rpc.publicnode.com,https://api.mainnet-beta.solana.com"
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 const ETH_RPC_URLS = (env("ETH_RPC_URLS") || "")
   .split(",")
@@ -167,18 +183,63 @@ const SOL_MINTS = {
   ONYC: "5Y8NV33Vv7WbnLfq3zBcKSdYPrk7g2KoiQoe7M2tcxp5",
 };
 
-async function fetchSolWallet(ownerStr) {
-  if (!ownerStr) return { assets: [] };
+async function getWorkingSolConnection() {
+  let lastErr = null;
 
-  const connection = new Connection(SOLANA_RPC_URL, "confirmed");
+  for (const url of [...new Set(SOLANA_RPC_URLS)]) {
+    try {
+      const connection = new Connection(url, "confirmed");
+
+      await Promise.race([
+        connection.getVersion(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("SOL RPC timeout")), 8000)
+        ),
+      ]);
+
+      console.log("[rpc:sol] OK:", url);
+      return { connection, rpcUrl: url };
+    } catch (e) {
+      lastErr = e;
+      console.log("[rpc:sol] failed:", url, e?.message || e);
+    }
+  }
+
+  throw lastErr || new Error("No working SOL RPC");
+}
+
+async function fetchSolWallet(ownerStr) {
+  if (!ownerStr) {
+    return {
+      assets: [],
+      debug: {
+        status: "empty_wallet_address",
+        rpc_used: null,
+        error: null,
+      },
+    };
+  }
+
+  const { connection, rpcUrl } = await getWorkingSolConnection();
   const owner = new PublicKey(ownerStr);
 
-  const lamports = await connection.getBalance(owner);
+  const lamports = await Promise.race([
+    connection.getBalance(owner),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("SOL getBalance timeout")), 12000)
+    ),
+  ]);
+
   const sol = lamports / LAMPORTS_PER_SOL;
 
-  const resp = await connection.getParsedTokenAccountsByOwner(owner, {
-    programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
-  });
+  const resp = await Promise.race([
+    connection.getParsedTokenAccountsByOwner(owner, {
+      programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+    }),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("SOL getParsedTokenAccountsByOwner timeout")), 12000)
+    ),
+  ]);
 
   const mintToAmount = new Map();
 
@@ -190,14 +251,26 @@ async function fetchSolWallet(ownerStr) {
     mintToAmount.set(mint, (mintToAmount.get(mint) || 0) + uiAmount);
   }
 
-  const assets = [{ symbol: "SOL", amount: sol }];
+  const assets = [];
+
+  if (sol > 0) {
+    assets.push({ symbol: "SOL", amount: sol });
+  }
 
   for (const [sym, mint] of Object.entries(SOL_MINTS)) {
     const amt = mintToAmount.get(mint) || 0;
     if (amt > 0) assets.push({ symbol: sym, amount: amt });
   }
 
-  return { assets };
+  return {
+    assets,
+    debug: {
+      status: "ok",
+      rpc_used: rpcUrl,
+      token_accounts_count: resp?.value?.length || 0,
+      error: null,
+    },
+  };
 }
 
 const ERC20_ABI = ["function balanceOf(address owner) view returns (uint256)"];
@@ -421,6 +494,7 @@ async function main() {
     okx_web3_project: OKX_WEB3_PROJECT ? "ok" : "(empty)",
     eth_address: ETH_WALLET_ADDRESS ? "ok" : "(empty)",
     sol_address: SOL_WALLET_ADDRESS ? "ok" : "(empty)",
+    sol_rpc_count: SOLANA_RPC_URLS.length,
     btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
     axis_base_url: MONEYFLOW_AXIS_BASE_URL ? "ok" : "(empty)",
     onyc_price_usd: env("ONYC_PRICE_USD") || "1.10",
@@ -430,7 +504,14 @@ async function main() {
   const cexUsd = await getOkxCexEquityUsdApprox();
 
   let ethWallet = { assets: [] };
-  let solWallet = { assets: [] };
+  let solWallet = {
+    assets: [],
+    debug: {
+      status: "not_started",
+      rpc_used: null,
+      error: null,
+    },
+  };
   let btcWallet = { assets: [], raw: null };
 
   try {
@@ -443,6 +524,14 @@ async function main() {
     solWallet = await fetchSolWallet(SOL_WALLET_ADDRESS);
   } catch (e) {
     console.log("[rpc:sol] failed (still ok):", e?.message || e);
+    solWallet = {
+      assets: [],
+      debug: {
+        status: "failed",
+        rpc_used: null,
+        error: e?.message || String(e),
+      },
+    };
   }
 
   try {
@@ -693,6 +782,11 @@ async function main() {
       onyc_mint: SOL_MINTS.ONYC,
       onyc_price_usd: onycPriceUsd,
 
+      sol_rpc: {
+        rpc_urls_count: SOLANA_RPC_URLS.length,
+        wallet_fetch: solWallet.debug || null,
+      },
+
       previous_snapshot: latestSnapshot
         ? {
             ts: latestSnapshot.ts,
@@ -739,6 +833,7 @@ async function main() {
     sol_wallet_detail: { SOL: solAmount, USDC: solUsdc, USDT: solUsdt, ONYC: solOnyc },
     btc_wallet_detail: { BTC: btcAmount },
     prices_used: prices,
+    sol_rpc: meta.debug.sol_rpc,
     web3_fetch: meta.debug.web3_fetch,
     previous_nav_usd: previousNavUsd,
     nav_drop_pct: navDropPct,
