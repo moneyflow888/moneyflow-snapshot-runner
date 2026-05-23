@@ -436,208 +436,266 @@ async function fetchEthWallet(ownerStr) {
   };
 }
 
+/* =========================
+   BTC wallet fallback
+========================= */
+
 const BTC_ADDRESS_API_CANDIDATES = [
   "https://blockstream.info/api",
   "https://mempool.space/api",
 ];
 
-async function fetchBtcFromProvider({ base, address }) {
-  const res = await fetch(`${base}/address/${encodeURIComponent(address)}`, {
-    method: "GET",
-    headers: { Accept: "application/json" },
-  });
+async function fetchBtcFromProvider({
+  base,
+  address
+}) {
 
-  const j = await readJson(res);
-
-  if (!j.ok) {
-    throw new Error(
-      `BTC address API HTTP ${j.status}: ${j.raw || JSON.stringify(j.data)}`
+  const res =
+    await fetch(
+      `${base}/address/${encodeURIComponent(address)}`,
+      {
+        method:"GET",
+        headers:{
+          Accept:"application/json"
+        }
+      }
     );
+
+  const j =
+    await readJson(res);
+
+  if(!j.ok){
+
+    throw new Error(
+      `BTC API HTTP ${j.status}`
+    );
+
   }
 
-  const chainFunded = num(j.data?.chain_stats?.funded_txo_sum);
-  const chainSpent = num(j.data?.chain_stats?.spent_txo_sum);
-  const mempoolFunded = num(j.data?.mempool_stats?.funded_txo_sum);
-  const mempoolSpent = num(j.data?.mempool_stats?.spent_txo_sum);
+  const chainFunded =
+    num(
+      j.data?.chain_stats?.funded_txo_sum
+    );
+
+  const chainSpent =
+    num(
+      j.data?.chain_stats?.spent_txo_sum
+    );
+
+  const mempoolFunded =
+    num(
+      j.data?.mempool_stats?.funded_txo_sum
+    );
+
+  const mempoolSpent =
+    num(
+      j.data?.mempool_stats?.spent_txo_sum
+    );
 
   const sats =
-    chainFunded -
-    chainSpent +
-    mempoolFunded -
-    mempoolSpent;
+    chainFunded
+    -chainSpent
+    +mempoolFunded
+    -mempoolSpent;
 
-  const btc = sats / 100_000_000;
+  const btc =
+    sats/100000000;
 
   return {
+
     btc,
-    raw: {
-      provider: base,
+
+    raw:{
+
+      provider:base,
+
       sats,
+
       chainFunded,
+
       chainSpent,
+
       mempoolFunded,
-      mempoolSpent,
-    },
+
+      mempoolSpent
+
+    }
+
   };
+
 }
 
-async function fetchBtcWallet(address) {
-  if (!address) {
-    return { assets: [], raw: null };
-  }
 
-  let lastZero = null;
-  let lastErr = null;
+async function fetchBtcWallet(
+  address
+){
 
-  for (const base of BTC_ADDRESS_API_CANDIDATES) {
-    try {
-      console.log("[rpc:btc] try:", base);
-
-      const r = await fetchBtcFromProvider({
-        base,
-        address,
-      });
-
-      if (r.btc > 0) {
-        console.log("[rpc:btc] success:", base, r.btc);
-
-        return {
-          assets: [{ symbol: "BTC", amount: r.btc }],
-          raw: {
-            ...r.raw,
-            status: "ok",
-            used_zero_confirmation: false,
-          },
-        };
-      }
-
-      console.log("[rpc:btc] zero -> try next:", base);
-
-      lastZero = {
-        assets: [{ symbol: "BTC", amount: 0 }],
-        raw: {
-          ...r.raw,
-          status: "zero_confirming",
-          used_zero_confirmation: true,
-        },
-      };
-    } catch (e) {
-      lastErr = e;
-      console.log("[rpc:btc] provider failed:", base, e?.message || e);
-    }
-  }
-
-  if (lastZero) {
-    console.log("[rpc:btc] confirmed zero after all providers");
+  if(!address){
 
     return {
-      assets: [{ symbol: "BTC", amount: 0 }],
-      raw: {
-        ...lastZero.raw,
-        status: "confirmed_zero",
-        error: lastErr?.message || null,
-      },
+      assets:[],
+      raw:null
     };
+
   }
 
-  throw lastErr || new Error("BTC wallet fetch failed");
-}
-  if (!address) return { assets: [], raw: null };
+  let lastZero=null;
 
-  let lastZero = null;
-  let lastErr = null;
+  let lastErr=null;
 
-  for (const base of BTC_ADDRESS_API_CANDIDATES) {
-    try {
-      console.log("[rpc:btc] try:", base);
 
-      const r = await fetchBtcFromProvider({
-        base,
-        address,
-      });
+  for(
+    const base
+    of BTC_ADDRESS_API_CANDIDATES
+  ){
 
-      if (r.btc > 0) {
-        console.log("[rpc:btc] success:", base, r.btc);
+    try{
+
+      console.log(
+        "[rpc:btc] try:",
+        base
+      );
+
+      const r=
+        await fetchBtcFromProvider({
+
+          base,
+
+          address
+
+        });
+
+
+      if(
+        r.btc>0
+      ){
+
+        console.log(
+          "[rpc:btc] success:",
+          base,
+          r.btc
+        );
 
         return {
-          assets: [{ symbol: "BTC", amount: r.btc }],
-          raw: {
+
+          assets:[
+            {
+              symbol:"BTC",
+              amount:r.btc
+            }
+          ],
+
+          raw:{
             ...r.raw,
-            status: "ok",
-            used_zero_confirmation: false,
-          },
+
+            status:"ok",
+
+            used_zero_confirmation:false
+          }
+
         };
+
       }
 
-      console.log("[rpc:btc] zero -> try next:", base);
 
-      lastZero = {
-        assets: [{ symbol: "BTC", amount: 0 }],
-        raw: {
+      console.log(
+        "[rpc:btc] zero -> try next:",
+        base
+      );
+
+      lastZero={
+
+        assets:[
+          {
+            symbol:"BTC",
+            amount:0
+          }
+        ],
+
+        raw:{
+
           ...r.raw,
-          status: "zero_confirming",
-          used_zero_confirmation: true,
-        },
+
+          status:"zero_confirming",
+
+          used_zero_confirmation:true
+
+        }
+
       };
 
-      continue;
-    } catch (e) {
-      lastErr = e;
-      console.log("[rpc:btc] provider failed:", base, e?.message || e);
+
+    }catch(e){
+
+      lastErr=e;
+
+      console.log(
+
+        "[rpc:btc] failed:",
+
+        base,
+
+        e?.message||e
+
+      );
+
     }
+
   }
 
-  if (lastZero) {
-    console.log("[rpc:btc] confirmed zero after all providers");
+
+  if(lastZero){
+
+    console.log(
+      "[rpc:btc] confirmed zero"
+    );
 
     return {
-      assets: [{ symbol: "BTC", amount: 0 }],
-      raw: {
+
+      assets:[
+        {
+          symbol:"BTC",
+          amount:0
+        }
+      ],
+
+      raw:{
+
         ...lastZero.raw,
-        status: "confirmed_zero",
-        error: lastErr?.message || null,
-      },
+
+        status:"confirmed_zero",
+
+        error:
+          lastErr?.message
+          ||null
+
+      }
+
     };
+
   }
 
-  throw lastErr || new Error("BTC wallet fetch failed");
-}
-  if (!address) return { assets: [], raw: null };
 
-  let lastErr = null;
+  throw (
 
-  for (const base of BTC_ADDRESS_API_CANDIDATES) {
-    try {
-      const res = await fetch(`${base}/address/${encodeURIComponent(address)}`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-      });
+    lastErr ||
 
-      const j = await readJson(res);
-      if (!j.ok) throw new Error(`BTC address API HTTP ${j.status}: ${j.raw || JSON.stringify(j.data)}`);
+    new Error(
+      "BTC fetch failed"
+    )
 
-      const chainFunded = num(j.data?.chain_stats?.funded_txo_sum);
-      const chainSpent = num(j.data?.chain_stats?.spent_txo_sum);
-      const mempoolFunded = num(j.data?.mempool_stats?.funded_txo_sum);
-      const mempoolSpent = num(j.data?.mempool_stats?.spent_txo_sum);
+  );
 
-      const sats = chainFunded - chainSpent + mempoolFunded - mempoolSpent;
-      const btc = sats / 100_000_000;
-
-      return {
-        assets: [{ symbol: "BTC", amount: btc }],
-        raw: { provider: base, sats, chainFunded, chainSpent, mempoolFunded, mempoolSpent },
-      };
-    } catch (e) {
-      lastErr = e;
-      console.log(`[rpc:btc] provider failed ${base}:`, e?.message || e);
-    }
-  }
-
-  throw lastErr || new Error("BTC wallet fetch failed");
 }
 
-const OKX_WEB3_API_KEY = env("OKX_WEB3_API_KEY");
+
+/* 下一段一定直接接這個 */
+
+const OKX_WEB3_API_KEY =
+  env(
+    "OKX_WEB3_API_KEY"
+  );
+
 const OKX_WEB3_API_SECRET = env("OKX_WEB3_API_SECRET");
 const OKX_WEB3_API_PASSPHRASE = env("OKX_WEB3_API_PASSPHRASE");
 const OKX_WEB3_PROJECT = env("OKX_WEB3_PROJECT") || env("OKX_WEB3_PROJECT_ID") || "";
