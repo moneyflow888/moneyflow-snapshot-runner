@@ -441,7 +441,106 @@ const BTC_ADDRESS_API_CANDIDATES = [
   "https://mempool.space/api",
 ];
 
+async function fetchBtcFromProvider({ base, address }) {
+  const res = await fetch(`${base}/address/${encodeURIComponent(address)}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+
+  const j = await readJson(res);
+  if (!j.ok) {
+    throw new Error(
+      `BTC address API HTTP ${j.status}: ${j.raw || JSON.stringify(j.data)}`
+    );
+  }
+
+  const chainFunded = num(j.data?.chain_stats?.funded_txo_sum);
+  const chainSpent = num(j.data?.chain_stats?.spent_txo_sum);
+  const mempoolFunded = num(j.data?.mempool_stats?.funded_txo_sum);
+  const mempoolSpent = num(j.data?.mempool_stats?.spent_txo_sum);
+
+  const sats =
+    chainFunded -
+    chainSpent +
+    mempoolFunded -
+    mempoolSpent;
+
+  const btc = sats / 100_000_000;
+
+  return {
+    btc,
+    raw: {
+      provider: base,
+      sats,
+      chainFunded,
+      chainSpent,
+      mempoolFunded,
+      mempoolSpent,
+    },
+  };
+}
+
 async function fetchBtcWallet(address) {
+  if (!address) return { assets: [], raw: null };
+
+  let lastZero = null;
+  let lastErr = null;
+
+  for (const base of BTC_ADDRESS_API_CANDIDATES) {
+    try {
+      console.log("[rpc:btc] try:", base);
+
+      const r = await fetchBtcFromProvider({
+        base,
+        address,
+      });
+
+      if (r.btc > 0) {
+        console.log("[rpc:btc] success:", base, r.btc);
+
+        return {
+          assets: [{ symbol: "BTC", amount: r.btc }],
+          raw: {
+            ...r.raw,
+            status: "ok",
+            used_zero_confirmation: false,
+          },
+        };
+      }
+
+      console.log("[rpc:btc] zero -> try next:", base);
+
+      lastZero = {
+        assets: [{ symbol: "BTC", amount: 0 }],
+        raw: {
+          ...r.raw,
+          status: "zero_confirming",
+          used_zero_confirmation: true,
+        },
+      };
+
+      continue;
+    } catch (e) {
+      lastErr = e;
+      console.log("[rpc:btc] provider failed:", base, e?.message || e);
+    }
+  }
+
+  if (lastZero) {
+    console.log("[rpc:btc] confirmed zero after all providers");
+
+    return {
+      assets: [{ symbol: "BTC", amount: 0 }],
+      raw: {
+        ...lastZero.raw,
+        status: "confirmed_zero",
+        error: lastErr?.message || null,
+      },
+    };
+  }
+
+  throw lastErr || new Error("BTC wallet fetch failed");
+}
   if (!address) return { assets: [], raw: null };
 
   let lastErr = null;
