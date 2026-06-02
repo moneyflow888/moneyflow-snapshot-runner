@@ -1,5 +1,5 @@
 const KAMINO_OWNER =
-  "3SwVwDD7nmn3oXFszyFG7vDQizZXgGLmiFBYYQGWDLui";
+  "3SwVwDD7nmn3oXFSzyFG7vDQizZxGgLmiFBYYQGWDLui";
 
 const KAMINO_YIELD_ID =
   "59obFNBzyTBGowrkif5uK7ojS58vsuWz3ZCvg6tfZAGw";
