@@ -1,107 +1,148 @@
 const KAMINO_OWNER =
-  "3SwVwDD7nmn3oXFszyFG7vDQizZXgGLmiFBYYQGWDLui";
+"3SwVwDD7nmn3oXFszyFG7vDQizZXgGLmiFBYYQGWDLui";
 
-const KAMINO_PNL_URL =
-  "https://api.kamino.finance/v2/kamino-market/47tfyEG9SsdEnUm9cw5kY9BXngQGqu3LBoop9j5uTAv8/obligations/F1oMNKJ6iue2QbpE4SBfSjNNXbpAMKjy5BNSDQMw4FA4/pnl/?pnlMode=current_obligation&useStakeRate=false&programId=KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD";
+const KAMINO_YIELD_ID =
+"59obFNBzyTBGowrkif5uK7ojS58vsuWz3ZCvg6tfZAGw";
 
 function num(v) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+const n = Number(v);
+return Number.isFinite(n) ? n : 0;
 }
 
-function getKaminoHistoryUrl() {
-  const end = new Date();
+function rangeParams() {
+const end = new Date();
 
-  const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - 7);
+const start = new Date(end);
+start.setUTCDate(start.getUTCDate() - 7);
 
-  return `https://api.kamino.finance/owners/${KAMINO_OWNER}/net-values/history?start=${encodeURIComponent(
+return `start=${encodeURIComponent(
     start.toISOString()
-  )}&end=${encodeURIComponent(end.toISOString())}`;
+  )}&end=${encodeURIComponent(
+    end.toISOString()
+  )}`;
 }
 
-async function fetchOwnerNetValue() {
-  const url = getKaminoHistoryUrl();
-  console.log("[kamino] owner net-values url:", url);
+const HEADERS = {
+accept: "application/json",
+"user-agent": "Mozilla/5.0",
+};
 
-  const res = await fetch(url, {
-    headers: {
-      accept: "application/json",
-    },
-  });
+async function fetchJson(url) {
+console.log("[kamino] try:", url);
 
-  if (!res.ok) {
-    throw new Error(`Kamino owner net-values failed: ${res.status}`);
-  }
+const res = await fetch(url, {
+headers: HEADERS,
+});
 
-  const data = await res.json();
+if (!res.ok) {
+throw new Error(`HTTP ${res.status}`);
+}
 
-  if (!Array.isArray(data) || data.length === 0) {
-    throw new Error("Kamino owner net-values empty");
-  }
+return await res.json();
+}
 
-  const latest = data[data.length - 1];
+function parseHistoryRows(data, sourceUsed) {
+if (!Array.isArray(data) || data.length === 0) {
+throw new Error(`${sourceUsed} empty`);
+}
 
-  const klendUsd = num(latest?.klendUsd);
-  const kvaultsUsd = num(latest?.kvaultsUsd);
-  const strategiesUsd = num(latest?.strategiesUsd);
-  const stakingUsd = num(latest?.stakingUsd);
+const rows = data
+.map((x) => {
+const klendUsd = num(x?.klendUsd);
+const kvaultsUsd = num(x?.kvaultsUsd);
+const strategiesUsd = num(x?.strategiesUsd);
+const stakingUsd = num(x?.stakingUsd);
 
-  const netValueUsd = klendUsd + kvaultsUsd + strategiesUsd + stakingUsd;
-
-  if (netValueUsd <= 0) {
-    throw new Error("Kamino owner net value invalid");
-  }
-
+```
   return {
-    source_used: "kamino_owner_net_values_history",
-    status: "OK",
+    created_on: x?.createdOn ?? null,
     klend_usd: klendUsd,
     kvaults_usd: kvaultsUsd,
     strategies_usd: strategiesUsd,
     staking_usd: stakingUsd,
-    net_value_usd: netValueUsd,
-    updated_at: new Date().toISOString(),
+    net_value_usd:
+      klendUsd +
+      kvaultsUsd +
+      strategiesUsd +
+      stakingUsd,
   };
+})
+.filter((x) => x.net_value_usd > 0)
+.sort((a, b) => {
+  return (
+    new Date(a.created_on || 0).getTime() -
+    new Date(b.created_on || 0).getTime()
+  );
+});
+```
+
+if (rows.length === 0) {
+throw new Error(`${sourceUsed} no valid net value`);
 }
 
-async function fetchObligationPnl() {
-  const res = await fetch(KAMINO_PNL_URL, {
-    headers: {
-      accept: "application/json",
-    },
-  });
+const latest = rows[rows.length - 1];
 
-  if (!res.ok) {
-    throw new Error(`Kamino PNL failed: ${res.status}`);
-  }
+return {
+source_used: sourceUsed,
+status: "OK",
 
-  const data = await res.json();
+```
+klend_usd: latest.klend_usd,
+kvaults_usd: latest.kvaults_usd,
+strategies_usd: latest.strategies_usd,
+staking_usd: latest.staking_usd,
 
-  const pnlUsd = num(data?.usd);
-  const investedUsd = num(data?.invested?.usd);
-  const netValueUsd = investedUsd + pnlUsd;
+net_value_usd: latest.net_value_usd,
+updated_at: new Date().toISOString(),
+```
 
-  if (netValueUsd <= 0) {
-    throw new Error("Kamino PNL net value invalid");
-  }
+};
+}
 
-  return {
-    source_used: "kamino_obligation_pnl",
-    status: "OK",
-    invested_usd: investedUsd,
-    pnl_usd: pnlUsd,
-    net_value_usd: netValueUsd,
-    updated_at: new Date().toISOString(),
-  };
+async function fetchOwnerNetValues() {
+const url =
+`https://api.kamino.finance/owners/${KAMINO_OWNER}/net-values/history?${rangeParams()}`;
+
+const data = await fetchJson(url);
+
+return parseHistoryRows(
+data,
+"kamino_owner_net_values_history"
+);
+}
+
+async function fetchYieldHistory() {
+const url =
+`https://api.kamino.finance/yields/${KAMINO_YIELD_ID}/history?${rangeParams()}`;
+
+const data = await fetchJson(url);
+
+return parseHistoryRows(
+data,
+"kamino_yields_history"
+);
 }
 
 export async function getKaminoPortfolio() {
-  try {
-    return await fetchOwnerNetValue();
-  } catch (e) {
-    console.warn("[kamino] owner net-values failed:", e?.message ?? e);
-  }
+try {
+return await fetchOwnerNetValues();
+} catch (e) {
+console.warn(
+"[kamino] owner net-values failed:",
+e?.message ?? e
+);
+}
 
-  return await fetchObligationPnl();
+try {
+return await fetchYieldHistory();
+} catch (e) {
+console.warn(
+"[kamino] yields history failed:",
+e?.message ?? e
+);
+}
+
+throw new Error(
+"Kamino full net value unavailable"
+);
 }
