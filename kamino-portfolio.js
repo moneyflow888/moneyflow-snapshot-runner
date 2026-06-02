@@ -38,20 +38,50 @@ async function fetchJson(url) {
   return await res.json();
 }
 
+function getRows(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.history)) return data.history;
+  if (Array.isArray(data?.rows)) return data.rows;
+  if (Array.isArray(data?.result)) return data.result;
+  return [];
+}
+
+function pickNumber(x, keys) {
+  for (const key of keys) {
+    const n = num(x?.[key]);
+    if (n > 0) return n;
+  }
+  return 0;
+}
+
 function parseHistoryRows(data, sourceUsed) {
-  if (!Array.isArray(data) || data.length === 0) {
+  const rawRows = getRows(data);
+
+  if (rawRows.length === 0) {
+    console.log("[kamino] raw response:", JSON.stringify(data).slice(0, 1000));
     throw new Error(`${sourceUsed} empty`);
   }
 
-  const rows = data
+  console.log("[kamino] rows:", rawRows.length);
+  console.log(
+    "[kamino] latest sample:",
+    JSON.stringify(rawRows[rawRows.length - 1]).slice(0, 1000)
+  );
+
+  const rows = rawRows
     .map((x) => {
-      const klendUsd = num(x?.klendUsd);
-      const kvaultsUsd = num(x?.kvaultsUsd);
-      const strategiesUsd = num(x?.strategiesUsd);
-      const stakingUsd = num(x?.stakingUsd);
+      const klendUsd = pickNumber(x, ["klendUsd", "klend_usd", "klend"]);
+      const kvaultsUsd = pickNumber(x, ["kvaultsUsd", "kvaults_usd", "kvaults"]);
+      const strategiesUsd = pickNumber(x, [
+        "strategiesUsd",
+        "strategies_usd",
+        "strategies",
+      ]);
+      const stakingUsd = pickNumber(x, ["stakingUsd", "staking_usd", "staking"]);
 
       return {
-        created_on: x?.createdOn ?? null,
+        created_on: x?.createdOn ?? x?.created_on ?? x?.timestamp ?? x?.ts ?? null,
         klend_usd: klendUsd,
         kvaults_usd: kvaultsUsd,
         strategies_usd: strategiesUsd,
