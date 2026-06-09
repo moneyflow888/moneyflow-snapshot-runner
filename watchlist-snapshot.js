@@ -38,62 +38,74 @@ async function insertMetric({ asset, metric, value, source, raw }) {
     { asset, metric, value: n, source, raw },
   ]);
 
-  if (r.error) throw new Error(`insert failed ${asset}/${metric}: ${r.error.message}`);
-  console.log(`✅ ${asset}/${metric} = ${n}`);
+  if (r.error) {
+    throw new Error(`insert failed ${asset}/${metric}: ${r.error.message}`);
+  }
+
+  console.log(`✅ ${asset}/${metric} = ${n} (${source})`);
 }
 
 async function main() {
   const rows = [];
 
+  // Ethena TVL
   const ethenaTvl = await fetchJson("https://api.llama.fi/tvl/ethena");
 
-rows.push({
-  asset: "ETHENA",
-  metric: "tvl",
-  value: ethenaTvl,
-  source: "defillama_tvl_ethena",
-  raw: { value: ethenaTvl },
-});
-
-  
-
-  const stablecoins = await fetchJson(
-    "https://stablecoins.llama.fi/stablecoins?includePrices=true"
-  );
-
-  const usde = stablecoins.peggedAssets?.find((x) => {
-    const name = String(x.name || "").toLowerCase();
-    const symbol = String(x.symbol || "").toLowerCase();
-    return name.includes("usde") || symbol === "usde";
-  });
-
-  if (!usde) throw new Error("USDe not found");
-
   rows.push({
-    asset: "USDE",
-    metric: "supply",
-    value: usde.circulating?.peggedUSD ?? usde.mcap,
-    source: "defillama_stablecoins",
-    raw: usde,
+    asset: "ETHENA",
+    metric: "tvl",
+    value: ethenaTvl,
+    source: "defillama_tvl_ethena",
+    raw: { value: ethenaTvl },
   });
 
-  const yields = await fetchJson("https://yields.llama.fi/pools");
+  // USDe Supply
+  try {
+    const stablecoins = await fetchJson(
+      "https://stablecoins.llama.fi/stablecoins?includePrices=true"
+    );
 
-  const susde = yields.data?.find((x) => {
-    const symbol = String(x.symbol || "").toLowerCase();
-    const project = String(x.project || "").toLowerCase();
-    return symbol.includes("susde") && project.includes("ethena");
-  });
+    const usde = stablecoins.peggedAssets?.find((x) => {
+      const name = String(x.name || "").toLowerCase();
+      const symbol = String(x.symbol || "").toLowerCase();
+      return name.includes("usde") || symbol === "usde";
+    });
 
-  if (!susde) throw new Error("sUSDe pool not found");
+    if (!usde) throw new Error("USDe not found");
 
-  rows.push({
-    asset: "SUSDE",
-    metric: "apy",
-    value: susde.apy,
-    source: "defillama_yields",
-    raw: susde,
-  });
+    rows.push({
+      asset: "USDE",
+      metric: "supply",
+      value: usde.circulating?.peggedUSD ?? usde.mcap,
+      source: "defillama_stablecoins",
+      raw: usde,
+    });
+  } catch (e) {
+    console.error("⚠️ USDE/supply failed:", e?.message ?? e);
+  }
+
+  // sUSDe APY
+  try {
+    const yields = await fetchJson("https://yields.llama.fi/pools");
+
+    const susde = yields.data?.find((x) => {
+      const symbol = String(x.symbol || "").toLowerCase();
+      const project = String(x.project || "").toLowerCase();
+      return symbol.includes("susde") && project.includes("ethena");
+    });
+
+    if (!susde) throw new Error("sUSDe pool not found");
+
+    rows.push({
+      asset: "SUSDE",
+      metric: "apy",
+      value: susde.apy,
+      source: "defillama_yields",
+      raw: susde,
+    });
+  } catch (e) {
+    console.error("⚠️ SUSDE/apy failed:", e?.message ?? e);
+  }
 
   for (const row of rows) {
     await insertMetric(row);
