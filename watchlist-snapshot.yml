@@ -1,0 +1,30 @@
+name: watchlist snapshot
+
+on:
+  schedule:
+    - cron: "15 */2 * * *"
+
+  workflow_dispatch: {}
+
+jobs:
+  run-watchlist-snapshot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Run watchlist snapshot
+        run: node watchlist-snapshot.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
