@@ -46,13 +46,21 @@ async function main() {
   const rows = [];
 
   const ethena = await fetchJson("https://api.llama.fi/protocol/ethena");
-  rows.push({
-    asset: "ETHENA",
-    metric: "tvl",
-    value: ethena.tvl,
-    source: "defillama_protocol_ethena",
-    raw: ethena,
-  });
+
+const ethenaTvl =
+  ethena.tvl ??
+  Object.values(ethena.currentChainTvls || {}).reduce((sum, v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? sum + n : sum;
+  }, 0);
+
+rows.push({
+  asset: "ETHENA",
+  metric: "tvl",
+  value: ethenaTvl,
+  source: "defillama_protocol_ethena",
+  raw: ethena,
+});
 
   const stablecoins = await fetchJson(
     "https://stablecoins.llama.fi/stablecoins?includePrices=true"
