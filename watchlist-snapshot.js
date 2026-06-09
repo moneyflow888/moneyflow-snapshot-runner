@@ -45,6 +45,16 @@ async function insertMetric({ asset, metric, value, source, raw }) {
 async function main() {
   const rows = [];
 
+  const ethenaTvl = await fetchJson("https://api.llama.fi/tvl/ethena");
+
+rows.push({
+  asset: "ETHENA",
+  metric: "tvl",
+  value: ethenaTvl,
+  source: "defillama_tvl_ethena",
+  raw: { value: ethenaTvl },
+});
+
   
 
   const stablecoins = await fetchJson(
