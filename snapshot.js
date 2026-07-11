@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { ethers } from "ethers";
 import { getKaminoPortfolio } from "./kamino-portfolio.js";
-import { getMorphoPortfolio } from "./morpho-portfolio.js";
+
 
 const env = (k) => (process.env[k] ?? "").toString().trim();
 
@@ -884,71 +884,16 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
   let web3EthUsedFallback = false;
   let web3SolUsedFallback = false;
 
-  let morphoStatus = "pending";
-  let morphoError = null;
-  let morphoUsedFallback = false;
+  
 
   let kaminoStatus = "pending";
   let kaminoError = null;
   let kaminoUsedFallback = false;
 
-  const prevEthDefiUsd = getBreakdownValue(latestSnapshot?.meta, "okx_web3_defi_eth_usd");
   const prevSolDefiUsd = getBreakdownValue(latestSnapshot?.meta, "okx_web3_defi_sol_usd");
 
-  try {
-    const morpho = await getMorphoPortfolio();
-
-    ethDefi = {
-      usd: morpho.total_assets_usd,
-      platforms: [
-        {
-          platformName: "Morpho",
-          currencyAmount: morpho.total_assets_usd,
-          vaults: morpho.vaults || [],
-        },
-      ],
-    };
-
-    morphoStatus = "ok";
-    web3EthStatus = "morpho_ok";
-
-    console.log("[morpho] success:", morpho.total_assets_usd);
-  } catch (e) {
-    morphoStatus = "fallback_okx";
-    morphoError = e?.message || String(e);
-    morphoUsedFallback = true;
-
-    console.log("[morpho] failed -> use OKX ETH fallback:", morphoError);
-
-    if (!web3Enabled()) {
-      web3EthStatus = "ERROR";
-      web3EthError = "Morpho failed and OKX Web3 is disabled";
-      throw new Error("Morpho failed and OKX Web3 is disabled");
-    }
-
-    try {
-      ethDefi = await getOkxWeb3DefiUsd({
-        chainId: OKX_WEB3_ETH_CHAIN_ID,
-        walletAddress: ETH_WALLET_ADDRESS,
-      });
-
-      web3EthStatus = "okx_fallback_ok";
-      web3EthUsedFallback = true;
-
-      console.log("[web3 ETH] OKX fallback success:", ethDefi.usd);
-    } catch (okxErr) {
-      web3EthStatus = "ERROR";
-      web3EthError = okxErr?.message || String(okxErr);
-
-      console.log("[morpho+okx] BOTH FAILED", {
-        morpho_error: morphoError,
-        okx_error: web3EthError,
-      });
-
-      throw new Error("Morpho + OKX ETH both failed");
-    }
-  }
-
+ 
+   
   await sleep(350);
 
   try {
