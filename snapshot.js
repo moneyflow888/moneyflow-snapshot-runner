@@ -280,25 +280,6 @@ const EVM_TOKENS = {
   USDT: { address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6 },
 };
 
-async function makeWorkingEvmProvider() {
-  const errors = [];
-
-  for (const url of [...new Set(ETH_RPC_CANDIDATES)]) {
-    try {
-      const p = new ethers.JsonRpcProvider(url);
-      const bn = await Promise.race([
-        p.getBlockNumber(),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("RPC timeout")), 8000)),
-      ]);
-      if (typeof bn === "number") return p;
-    } catch (e) {
-      errors.push({ url, msg: e?.message || String(e) });
-    }
-  }
-
-  throw new Error("No working EVM RPC:\n" + errors.map((x) => `- ${x.url}: ${x.msg}`).join("\n"));
-}
-
 async function fetchEthWallet(ownerStr) {
   if (!ownerStr) {
     return { assets: [] };
@@ -701,7 +682,6 @@ const OKX_WEB3_API_PASSPHRASE = env("OKX_WEB3_API_PASSPHRASE");
 const OKX_WEB3_PROJECT = env("OKX_WEB3_PROJECT") || env("OKX_WEB3_PROJECT_ID") || "";
 
 const OKX_WEB3_BASE_URL = env("OKX_WEB3_BASE_URL") || "https://web3.okx.com";
-const OKX_WEB3_ETH_CHAIN_ID = env("OKX_WEB3_ETH_CHAIN_ID") || "1";
 const OKX_WEB3_SOL_CHAIN_ID = env("OKX_WEB3_SOL_CHAIN_ID") || "501";
 
 function web3Enabled() {
@@ -874,14 +854,10 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
     console.log("[rpc:btc] failed (still ok):", e?.message || e);
   }
 
-  let ethDefi = { usd: 0, platforms: [] };
   let solDefi = { usd: 0, platforms: [] };
 
-  let web3EthStatus = "disabled";
   let web3SolStatus = "disabled";
-  let web3EthError = null;
   let web3SolError = null;
-  let web3EthUsedFallback = false;
   let web3SolUsedFallback = false;
 
   
@@ -985,7 +961,6 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
 
   const nav_usd =
     cexUsd +
-    ethDefi.usd +
     solDefi.usd +
     ethWalletUsd +
     solWalletUsd +
@@ -997,7 +972,6 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
 
   const breakdown_rollup = {
     okx_cex_usd: cexUsd,
-    okx_web3_defi_eth_usd: ethDefi.usd,
     okx_web3_defi_sol_usd: solDefi.usd,
     eth_wallet_usd: ethWalletUsd,
     sol_wallet_usd: solWalletUsd,
@@ -1007,7 +981,7 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
 
   const meta = {
   source:
-    "okx_cex(totalEq) + morpho_or_okx_web3_eth + kamino_or_okx_web3_sol + wallet_rpc(eth/sol + usdc/usdt + btc + onyc)",
+    "okx_cex(totalEq) + kamino_or_okx_web3_sol + wallet_rpc(eth/sol + usdc/usdt + btc + onyc)",
   breakdown_rollup,
 
  rpc_wallet_status: {
@@ -1031,15 +1005,6 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
         ? "fallback"
         : "error",
 },
-
-  morpho: {
-      status: morphoStatus,
-      source_used: morphoStatus === "ok" ? "morpho_earn_api" : "okx_web3_fallback",
-      used_fallback: morphoUsedFallback,
-      error: morphoError,
-      net_value_usd: ethDefi.usd,
-      updated_at: ts,
-    },
 
     kamino: {
       status: kaminoStatus,
@@ -1068,7 +1033,6 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
     },
 
     okx_web3_platforms: {
-      eth: ethDefi.platforms,
       sol: solDefi.platforms,
     },
 
@@ -1077,7 +1041,7 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
     debug: {
       okx_web3_project_present: !!OKX_WEB3_PROJECT,
       okx_web3_base_url: OKX_WEB3_BASE_URL,
-      chainIds: { eth: OKX_WEB3_ETH_CHAIN_ID, sol: OKX_WEB3_SOL_CHAIN_ID },
+      chainIds: { sol: OKX_WEB3_SOL_CHAIN_ID },
       btc_wallet_address: BTC_WALLET_ADDRESS,
       axis_base_url: MONEYFLOW_AXIS_BASE_URL,
       onyc_mint: SOL_MINTS.ONYC,
@@ -1092,26 +1056,15 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
         ? {
             ts: latestSnapshot.ts,
             nav_usd: previousNavUsd,
-            okx_web3_defi_eth_usd: prevEthDefiUsd,
             okx_web3_defi_sol_usd: prevSolDefiUsd,
           }
         : null,
 
       web3_fetch: {
-        morpho: {
-          status: morphoStatus,
-          used_fallback: morphoUsedFallback,
-          error: morphoError,
-        },
         kamino: {
           status: kaminoStatus,
           used_fallback: kaminoUsedFallback,
           error: kaminoError,
-        },
-        eth: {
-          status: web3EthStatus,
-          used_fallback: web3EthUsedFallback,
-          error: web3EthError,
         },
         sol: {
           status: web3SolStatus,
