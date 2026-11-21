@@ -36,6 +36,6 @@ jobs:
         run: node weekly-pnl-snapshot.js
         env:
           MONEYFLOW_AXIS_BASE_URL: ${{ secrets.MONEYFLOW_AXIS_BASE_URL }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          CRON_SECRET: ${{ secrets.MF_CRON_SECRET }}
           WEEK_KEY: ${{ inputs.week_key }}
           FORCE: ${{ inputs.force }}
