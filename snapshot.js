@@ -4,7 +4,6 @@ import axios from "axios";
 import { createClient } from "@supabase/supabase-js";
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { ethers } from "ethers";
-import { getKaminoPortfolio } from "./kamino-portfolio.js";
 
 
 const env = (k) => (process.env[k] ?? "").toString().trim();
@@ -29,7 +28,6 @@ async function readJson(res) {
   }
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchPricesUsd(symbols) {
   const map = { BTC: "bitcoin", ETH: "ethereum", SOL: "solana" };
@@ -79,10 +77,6 @@ async function getLatestNavSnapshot() {
   return r.data || null;
 }
 
-function getBreakdownValue(meta, key) {
-  return num(meta?.breakdown_rollup?.[key]);
-}
-
 const MONEYFLOW_AXIS_BASE_URL =
   env("MONEYFLOW_AXIS_BASE_URL") || env("NEXT_PUBLIC_BASE_URL") || "https://moneyflow-axis.vercel.app";
 
@@ -97,6 +91,9 @@ async function fetchPnlWeek() {
   if (!j.ok) throw new Error(`pnl-week HTTP ${j.status}: ${j.raw || JSON.stringify(j.data)}`);
 
   const data = j.data || {};
+  if (data.ok !== true || data.pnl_usd == null || data.pnl_pct == null || !Number.isFinite(Number(data.pnl_usd)) || !Number.isFinite(Number(data.pnl_pct))) {
+    throw new Error("pnl-week did not return valid PnL; WTD snapshot was not written");
+  }
   return {
     pnl_usd: num(data?.pnl_usd ?? data?.pnl ?? 0),
     pnl_pct: num(data?.pnl_pct ?? 0),
@@ -180,7 +177,6 @@ const ETH_RPC_CANDIDATES = [
 const SOL_MINTS = {
   USDC: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
   USDT: "Es9vMFrzaCERmJfrF4H2FYD4KZcQw2YQkM1Zq8hY1n9",
-  ONYC: "5Y8NV33Vv7WbnLfq3zBcKSdYPrk7g2KoiQoe7M2tcxp5",
 };
 
 async function getWorkingSolConnection() {
@@ -670,127 +666,6 @@ async function fetchBtcWallet(
 }
 
 
-/* 下一段一定直接接這個 */
-
-const OKX_WEB3_API_KEY =
-  env(
-    "OKX_WEB3_API_KEY"
-  );
-
-const OKX_WEB3_API_SECRET = env("OKX_WEB3_API_SECRET");
-const OKX_WEB3_API_PASSPHRASE = env("OKX_WEB3_API_PASSPHRASE");
-const OKX_WEB3_PROJECT = env("OKX_WEB3_PROJECT") || env("OKX_WEB3_PROJECT_ID") || "";
-
-const OKX_WEB3_BASE_URL = env("OKX_WEB3_BASE_URL") || "https://web3.okx.com";
-const OKX_WEB3_SOL_CHAIN_ID = env("OKX_WEB3_SOL_CHAIN_ID") || "501";
-
-function web3Enabled() {
-  return !!(OKX_WEB3_API_KEY && OKX_WEB3_API_SECRET && OKX_WEB3_API_PASSPHRASE);
-}
-
-function isOkxWeb3RateLimitMessage(msg) {
-  const s = String(msg || "").toLowerCase();
-  return (
-    s.includes("http 429") ||
-    s.includes("50011") ||
-    s.includes("too many requests") ||
-    s.includes("rate limit")
-  );
-}
-
-async function okxWeb3Request({ path, bodyObj }) {
-  if (!web3Enabled()) {
-    throw new Error("Missing OKX_WEB3_API_KEY / OKX_WEB3_API_SECRET / OKX_WEB3_API_PASSPHRASE");
-  }
-
-  const method = "POST";
-  const ts = new Date().toISOString();
-  const body = JSON.stringify(bodyObj || {});
-  const requestPath = path;
-
-  const sign = okxSign({
-    secret: OKX_WEB3_API_SECRET,
-    timestamp: ts,
-    method,
-    requestPath,
-    body,
-  });
-
-  const headers = {
-    "OK-ACCESS-KEY": OKX_WEB3_API_KEY,
-    "OK-ACCESS-SIGN": sign,
-    "OK-ACCESS-TIMESTAMP": ts,
-    "OK-ACCESS-PASSPHRASE": OKX_WEB3_API_PASSPHRASE,
-    "Content-Type": "application/json",
-  };
-
-  if (OKX_WEB3_PROJECT) headers["OK-ACCESS-PROJECT"] = OKX_WEB3_PROJECT;
-
-  const res = await fetch(`${OKX_WEB3_BASE_URL}${path}`, { method, headers, body });
-  const j = await readJson(res);
-
-  if (!j.ok) throw new Error(`OKX WEB3 HTTP ${j.status}: ${j.raw || JSON.stringify(j.data)}`);
-
-  const code = String(j?.data?.code ?? "");
-  if (code && code !== "0") {
-    const msg = j?.data?.msg || j?.data?.message || j?.raw || JSON.stringify(j?.data);
-    throw new Error(`OKX WEB3 API code ${code}: ${msg}`);
-  }
-
-  return j.data;
-}
-
-async function okxWeb3RequestWithRetry(args, maxRetry = 6) {
-  let lastErr = null;
-
-  for (let i = 0; i < maxRetry; i++) {
-    try {
-      return await okxWeb3Request(args);
-    } catch (e) {
-      lastErr = e;
-      const is429 = isOkxWeb3RateLimitMessage(e?.message || "");
-
-      if (is429) {
-        const wait = 800 * Math.pow(2, i) + Math.floor(Math.random() * 250);
-        console.log(`[OKX_WEB3] 429 retry ${i + 1}/${maxRetry} wait ${wait}ms`);
-        await sleep(wait);
-        continue;
-      }
-
-      throw e;
-    }
-  }
-
-  throw lastErr;
-}
-
-async function getOkxWeb3DefiUsd({ chainId, walletAddress }) {
-  if (!walletAddress) return { usd: 0, platforms: [] };
-
-  const data = await okxWeb3RequestWithRetry({
-    path: "/api/v5/defi/user/asset/platform/list",
-    bodyObj: {
-      walletAddressList: [{ chainId: String(chainId), walletAddress: String(walletAddress) }],
-    },
-  });
-
-  const platforms = data?.data?.walletIdPlatformList?.[0]?.platformList || [];
-  const usd = Array.isArray(platforms)
-    ? platforms.reduce((acc, p) => acc + num(p?.currencyAmount), 0)
-    : 0;
-
-  return {
-    usd,
-    platforms: Array.isArray(platforms)
-      ? platforms.map((p) => ({
-          platformName: p?.platformName,
-          currencyAmount: num(p?.currencyAmount),
-          investmentCount: p?.investmentCount,
-        }))
-      : [],
-  };
-}
-
 async function main() {
   const ts = new Date().toISOString();
   const latestSnapshot = await getLatestNavSnapshot();
@@ -800,10 +675,6 @@ async function main() {
     supabase_key: SUPABASE_SERVICE_ROLE_KEY ? "ok" : "missing",
     okx_cex_key: OKX_API_KEY ? "ok" : "missing",
     okx_cex_pass: OKX_API_PASSPHRASE ? "ok" : "missing",
-    okx_web3_key: OKX_WEB3_API_KEY ? "ok" : "(disabled)",
-    okx_web3_secret: OKX_WEB3_API_SECRET ? "ok" : "(disabled)",
-    okx_web3_pass: OKX_WEB3_API_PASSPHRASE ? "ok" : "(disabled)",
-    okx_web3_project: OKX_WEB3_PROJECT ? "ok" : "(empty)",
     eth_address: ETH_WALLET_ADDRESS ? "ok" : "(empty)",
     sol_address: SOL_WALLET_ADDRESS ? "ok" : "(empty)",
     sol_rpc_count: SOLANA_RPC_URLS.length,
@@ -811,7 +682,6 @@ sol_rpc_urls: SOLANA_RPC_URLS,
 
 btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
     axis_base_url: MONEYFLOW_AXIS_BASE_URL ? "ok" : "(empty)",
-    onyc_price_usd: env("ONYC_PRICE_USD") || "1.10",
     previous_nav_present: !!latestSnapshot,
   });
 
@@ -854,77 +724,6 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
     console.log("[rpc:btc] failed (still ok):", e?.message || e);
   }
 
-  let solDefi = { usd: 0, platforms: [] };
-
-  let web3SolStatus = "disabled";
-  let web3SolError = null;
-  let web3SolUsedFallback = false;
-
-  
-
-  let kaminoStatus = "pending";
-  let kaminoError = null;
-  let kaminoUsedFallback = false;
-
-  const prevSolDefiUsd = getBreakdownValue(latestSnapshot?.meta, "okx_web3_defi_sol_usd");
-
- 
-   
-  await sleep(350);
-
-  try {
-    const kamino = await getKaminoPortfolio();
-
-    solDefi = {
-      usd: kamino.net_value_usd,
-      platforms: [
-        {
-          platformName: "Kamino",
-          currencyAmount: kamino.net_value_usd,
-        },
-      ],
-    };
-
-    kaminoStatus = "ok";
-    web3SolStatus = "kamino_ok";
-
-    console.log("[kamino] success:", kamino.net_value_usd);
-  } catch (e) {
-    kaminoStatus = "fallback_okx";
-    kaminoError = e?.message || String(e);
-    kaminoUsedFallback = true;
-
-    console.log("[kamino] failed -> use OKX SOL fallback:", kaminoError);
-
-    if (!web3Enabled()) {
-      web3SolStatus = "ERROR";
-      web3SolError = "Kamino failed and OKX Web3 is disabled";
-      throw new Error("Kamino failed and OKX Web3 is disabled");
-    }
-
-    try {
-      solDefi = await getOkxWeb3DefiUsd({
-        chainId: OKX_WEB3_SOL_CHAIN_ID,
-        walletAddress: SOL_WALLET_ADDRESS,
-      });
-
-      web3SolStatus = "okx_fallback_ok";
-      web3SolUsedFallback = true;
-
-      console.log("[web3 SOL] OKX fallback success:", solDefi.usd);
-    } catch (okxErr) {
-      web3SolStatus = "ERROR";
-      web3SolError = okxErr?.message || String(okxErr);
-
-      console.log("[kamino+okx] BOTH FAILED", {
-        kamino_error: kaminoError,
-        okx_error: web3SolError,
-      });
-
-      throw new Error("Kamino + OKX SOL both failed");
-    }
-  }
-
   const ethAmount = Number(ethWallet.assets?.find((x) => x.symbol === "ETH")?.amount || 0);
   const solAmount = Number(solWallet.assets?.find((x) => x.symbol === "SOL")?.amount || 0);
   const btcAmount = Number(btcWallet.assets?.find((x) => x.symbol === "BTC")?.amount || 0);
@@ -934,10 +733,7 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
 
   const solUsdc = Number(solWallet.assets?.find((x) => x.symbol === "USDC")?.amount || 0);
   const solUsdt = Number(solWallet.assets?.find((x) => x.symbol === "USDT")?.amount || 0);
-  const solOnyc = Number(solWallet.assets?.find((x) => x.symbol === "ONYC")?.amount || 0);
 
-  const onycPriceUsd = num(env("ONYC_PRICE_USD")) > 0 ? num(env("ONYC_PRICE_USD")) : 1.10;
-  const onycWalletUsd = solOnyc * onycPriceUsd;
 
   let prices = {};
   let ethWalletUsd = 0;
@@ -957,31 +753,25 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
     btcWalletUsd = 0;
   }
 
-  prices.ONYC = onycPriceUsd;
 
   const nav_usd =
     cexUsd +
-    solDefi.usd +
     ethWalletUsd +
     solWalletUsd +
-    btcWalletUsd +
-    onycWalletUsd;
+    btcWalletUsd;
 
   const previousNavUsd = num(latestSnapshot?.nav_usd);
   const navDropPct = previousNavUsd > 0 ? ((previousNavUsd - nav_usd) / previousNavUsd) * 100 : 0;
 
   const breakdown_rollup = {
     okx_cex_usd: cexUsd,
-    okx_web3_defi_sol_usd: solDefi.usd,
     eth_wallet_usd: ethWalletUsd,
     sol_wallet_usd: solWalletUsd,
     btc_wallet_usd: btcWalletUsd,
-    onyc_wallet_usd: onycWalletUsd,
   };
 
   const meta = {
-  source:
-    "okx_cex(totalEq) + kamino_or_okx_web3_sol + wallet_rpc(eth/sol + usdc/usdt + btc + onyc)",
+  source: "okx_cex(totalEq) + wallet_rpc(eth/sol + usdc/usdt + btc)",
   breakdown_rollup,
 
  rpc_wallet_status: {
@@ -1006,15 +796,6 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
         : "error",
 },
 
-    kamino: {
-      status: kaminoStatus,
-      source_used: kaminoStatus === "ok" ? "kamino_portfolio" : "okx_web3_fallback",
-      used_fallback: kaminoUsedFallback,
-      error: kaminoError,
-      net_value_usd: solDefi.usd,
-      updated_at: ts,
-    },
-
     rpc_wallet_assets: {
       eth: ethWallet.assets,
       sol: solWallet.assets,
@@ -1025,27 +806,17 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
       eth_wallet_usd: ethWalletUsd,
       sol_wallet_usd: solWalletUsd,
       btc_wallet_usd: btcWalletUsd,
-      onyc_wallet_usd: onycWalletUsd,
       eth: { ETH: ethAmount, USDC: ethUsdc, USDT: ethUsdt },
-      sol: { SOL: solAmount, USDC: solUsdc, USDT: solUsdt, ONYC: solOnyc },
+      sol: { SOL: solAmount, USDC: solUsdc, USDT: solUsdt },
       btc: { BTC: btcAmount },
       prices_used: prices,
-    },
-
-    okx_web3_platforms: {
-      sol: solDefi.platforms,
     },
 
     btc_wallet_debug: btcWallet.raw || null,
 
     debug: {
-      okx_web3_project_present: !!OKX_WEB3_PROJECT,
-      okx_web3_base_url: OKX_WEB3_BASE_URL,
-      chainIds: { sol: OKX_WEB3_SOL_CHAIN_ID },
       btc_wallet_address: BTC_WALLET_ADDRESS,
       axis_base_url: MONEYFLOW_AXIS_BASE_URL,
-      onyc_mint: SOL_MINTS.ONYC,
-      onyc_price_usd: onycPriceUsd,
 
       sol_rpc: {
         rpc_urls_count: SOLANA_RPC_URLS.length,
@@ -1056,22 +827,8 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
         ? {
             ts: latestSnapshot.ts,
             nav_usd: previousNavUsd,
-            okx_web3_defi_sol_usd: prevSolDefiUsd,
           }
         : null,
-
-      web3_fetch: {
-        kamino: {
-          status: kaminoStatus,
-          used_fallback: kaminoUsedFallback,
-          error: kaminoError,
-        },
-        sol: {
-          status: web3SolStatus,
-          used_fallback: web3SolUsedFallback,
-          error: web3SolError,
-        },
-      },
 
       nav_guard: {
         previous_nav_usd: previousNavUsd,
@@ -1084,11 +841,9 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
   console.log(`[${ts}] NAV(USD)=${nav_usd.toFixed(2)} breakdown=`, {
     ...breakdown_rollup,
     eth_wallet_detail: { ETH: ethAmount, USDC: ethUsdc, USDT: ethUsdt },
-    sol_wallet_detail: { SOL: solAmount, USDC: solUsdc, USDT: solUsdt, ONYC: solOnyc },
     btc_wallet_detail: { BTC: btcAmount },
     prices_used: prices,
     sol_rpc: meta.debug.sol_rpc,
-    web3_fetch: meta.debug.web3_fetch,
     previous_nav_usd: previousNavUsd,
     nav_drop_pct: navDropPct,
   });
@@ -1112,7 +867,7 @@ btc_address: BTC_WALLET_ADDRESS ? "ok" : "(empty)",
       pnl_pct: pnlWeek.pnl_pct,
     });
   } catch (e) {
-    console.log("[wtd-live-snapshot] failed (still ok):", e?.message || e);
+    throw new Error(`NAV saved but WTD snapshot failed: ${e?.message || e}`);
   }
 }
 
