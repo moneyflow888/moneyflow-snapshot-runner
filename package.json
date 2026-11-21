@@ -2,12 +2,9 @@
   "name": "moneyflow-snapshot-runner",
   "private": true,
   "type": "module",
-
   "scripts": {
-    "run": "node ./snapshot.js",
-    "kamino": "node ./kamino-portfolio.js"
+    "run": "node ./snapshot.js"
   },
-
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
     "@supabase/supabase-js": "^2.97.0",
